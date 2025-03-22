@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# EyeLink output files
+*.asc
+*.edf
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# macOS system files
+.DS_Store
+
+# IDE/project files
+.vscode/
+.idea/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs and temp files
+*.log
+*.tmp
