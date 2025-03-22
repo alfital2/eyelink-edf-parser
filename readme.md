@@ -73,7 +73,7 @@ print(results["fixations"].head())
 
 To force reconversion:
 ```python
-results = run_pipeline("185988598.edf", force_convert=True)
+results = run_pipeline("[FILE_NAME].edf", force_convert=True)
 ```
 
 ---
