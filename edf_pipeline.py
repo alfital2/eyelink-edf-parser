@@ -9,7 +9,6 @@ Date: 2025-03-22
 """
 
 import subprocess
-import shutil
 from pathlib import Path
 from typing import Optional, Dict
 import pandas as pd
