@@ -18,5 +18,3 @@ combined_df = pd.concat([
 combined_df = combined_df.sort_values("timestamp").reset_index(drop=True)
 
 combined_df.to_csv("eyelink_combined.csv", index=False)
-
-#added nothing
