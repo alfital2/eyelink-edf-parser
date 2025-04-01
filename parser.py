@@ -146,18 +146,37 @@ class EyeLinkASCParser:
 
         return len(self.sample_data)
 
+    import re
+
     def parse_events(self):
         """Extract fixations, saccades, and blinks"""
-        # Event patterns
+
+        # Fixation Start: Match a line like "SFIX L 123456"
         fix_start_pattern = re.compile(r'^SFIX\s+([LR])\s+(\d+)')
+
+        # Fixation End: Match a line like "EFIX L 123456 123789 333 400.0 300.0 100"
+        # Group 1: eye (L/R), 2: start time, 3: end time, 4: duration, 5: x, 6: y, 7: pupil size
         fix_end_pattern = re.compile(r'^EFIX\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.-]+)\s+([\d.-]+)\s+(\d+)')
 
+        # Saccade Start: Match a line like "SSACC R 456789"
         sacc_start_pattern = re.compile(r'^SSACC\s+([LR])\s+(\d+)')
+
+        # Saccade End: Match a line like "ESACC R 456789 457000 211 300.0 200.0 400.0 250.0 150.0 500"
+        # Group 1: eye, 2: start, 3: end, 4: duration, 5-6: start_x/y, 7-8: end_x/y, 9: amplitude, 10: peak velocity
         sacc_end_pattern = re.compile(
             r'^ESACC\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+(\d+)')
 
+        # Blink Start: Match a line like "SBLINK L 567890"
         blink_start_pattern = re.compile(r'^SBLINK\s+([LR])\s+(\d+)')
+
+        # Blink End: Match a line like "EBLINK L 567890 568100 210"
+        # Group 1: eye, 2: start, 3: end, 4: duration
         blink_end_pattern = re.compile(r'^EBLINK\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)')
+
+        # Temporary storage for events
+        temp_fixations = {'left': {}, 'right': {}}
+        temp_saccades = {'left': {}, 'right': {}}
+        temp_blinks = {'left': {}, 'right': {}}
 
         for line in self.file_lines:
             # Fixation start
@@ -165,14 +184,14 @@ class EyeLinkASCParser:
             if match:
                 eye, timestamp = match.groups()
                 eye_key = 'left' if eye == 'L' else 'right'
-                self.fixations[eye_key].append({
+                temp_fixations[eye_key][int(timestamp)] = {
                     'start_time': int(timestamp),
                     'end_time': None,
                     'duration': None,
                     'x': None,
                     'y': None,
                     'pupil': None
-                })
+                }
                 continue
 
             # Fixation end
@@ -180,15 +199,16 @@ class EyeLinkASCParser:
             if match:
                 eye, start, end, duration, x, y, pupil = match.groups()
                 eye_key = 'left' if eye == 'L' else 'right'
-                # Add full fixation data
-                self.fixations[eye_key].append({
-                    'start_time': int(start),
+                start_time = int(start)
+                data = {
+                    'start_time': start_time,
                     'end_time': int(end),
                     'duration': int(duration),
                     'x': float(x),
                     'y': float(y),
                     'pupil': float(pupil)
-                })
+                }
+                temp_fixations[eye_key][start_time] = {**temp_fixations[eye_key].get(start_time, {}), **data}
                 continue
 
             # Saccade start
@@ -196,7 +216,7 @@ class EyeLinkASCParser:
             if match:
                 eye, timestamp = match.groups()
                 eye_key = 'left' if eye == 'L' else 'right'
-                self.saccades[eye_key].append({
+                temp_saccades[eye_key][int(timestamp)] = {
                     'start_time': int(timestamp),
                     'end_time': None,
                     'duration': None,
@@ -206,16 +226,18 @@ class EyeLinkASCParser:
                     'end_y': None,
                     'amplitude': None,
                     'peak_velocity': None
-                })
+                }
                 continue
 
             # Saccade end
             match = sacc_end_pattern.match(line)
             if match:
-                eye, start, end, duration, start_x, start_y, end_x, end_y, amplitude, peak_velocity = match.groups()
+                (eye, start, end, duration, start_x, start_y, end_x,
+                 end_y, amplitude, peak_velocity) = match.groups()
                 eye_key = 'left' if eye == 'L' else 'right'
-                self.saccades[eye_key].append({
-                    'start_time': int(start),
+                start_time = int(start)
+                data = {
+                    'start_time': start_time,
                     'end_time': int(end),
                     'duration': int(duration),
                     'start_x': float(start_x),
@@ -224,7 +246,8 @@ class EyeLinkASCParser:
                     'end_y': float(end_y),
                     'amplitude': float(amplitude),
                     'peak_velocity': float(peak_velocity)
-                })
+                }
+                temp_saccades[eye_key][start_time] = {**temp_saccades[eye_key].get(start_time, {}), **data}
                 continue
 
             # Blink start
@@ -232,11 +255,11 @@ class EyeLinkASCParser:
             if match:
                 eye, timestamp = match.groups()
                 eye_key = 'left' if eye == 'L' else 'right'
-                self.blinks[eye_key].append({
+                temp_blinks[eye_key][int(timestamp)] = {
                     'start_time': int(timestamp),
                     'end_time': None,
                     'duration': None
-                })
+                }
                 continue
 
             # Blink end
@@ -244,13 +267,21 @@ class EyeLinkASCParser:
             if match:
                 eye, start, end, duration = match.groups()
                 eye_key = 'left' if eye == 'L' else 'right'
-                self.blinks[eye_key].append({
-                    'start_time': int(start),
+                start_time = int(start)
+                data = {
+                    'start_time': start_time,
                     'end_time': int(end),
                     'duration': int(duration)
-                })
+                }
+                temp_blinks[eye_key][start_time] = {**temp_blinks[eye_key].get(start_time, {}), **data}
 
-        event_counts = {
+        # Convert dicts to lists
+        for eye in ['left', 'right']:
+            self.fixations[eye] = list(temp_fixations[eye].values())
+            self.saccades[eye] = list(temp_saccades[eye].values())
+            self.blinks[eye] = list(temp_blinks[eye].values())
+
+        return {
             'fixations_left': len(self.fixations['left']),
             'fixations_right': len(self.fixations['right']),
             'saccades_left': len(self.saccades['left']),
@@ -258,8 +289,6 @@ class EyeLinkASCParser:
             'blinks_left': len(self.blinks['left']),
             'blinks_right': len(self.blinks['right'])
         }
-
-        return event_counts
 
     def parse_file(self):
         """Parse all data from the ASC file"""
@@ -406,7 +435,7 @@ class EyeLinkASCParser:
                 if 'start_time' in sacc and 'end_time' in sacc:
                     # Mark samples within saccade period
                     mask = (unified_df['timestamp'] >= sacc['start_time']) & (
-                                unified_df['timestamp'] <= sacc['end_time'])
+                            unified_df['timestamp'] <= sacc['end_time'])
                     unified_df.loc[mask, f'is_saccade_{eye}'] = True
 
         # Mark blink periods
@@ -415,7 +444,7 @@ class EyeLinkASCParser:
                 if 'start_time' in blink and 'end_time' in blink:
                     # Mark samples within blink period
                     mask = (unified_df['timestamp'] >= blink['start_time']) & (
-                                unified_df['timestamp'] <= blink['end_time'])
+                            unified_df['timestamp'] <= blink['end_time'])
                     unified_df.loc[mask, f'is_blink_{eye}'] = True
 
         return unified_df
@@ -510,7 +539,7 @@ class EyeLinkASCParser:
                 head_dir_changes = ((samples_df['head_movement_magnitude'].diff() > 0) !=
                                     (samples_df['head_movement_magnitude'].shift().diff() > 0)).sum()
                 features['head_movement_frequency'] = head_dir_changes / (
-                            len(samples_df) / 500)  # Assuming 500Hz sampling
+                        len(samples_df) / 500)  # Assuming 500Hz sampling
 
             # Inter-pupil distance (can indicate depth changes or vergence)
             if 'x_left' in samples_df.columns and 'x_right' in samples_df.columns:
@@ -531,8 +560,8 @@ class EyeLinkASCParser:
                     features[f'fixation_{eye}_duration_mean'] = fix_df['duration'].mean()
                     features[f'fixation_{eye}_duration_std'] = fix_df['duration'].std()
                     features[f'fixation_{eye}_rate'] = len(fix_df) / (
-                                max(self.sample_data[-1]['timestamp'] - self.sample_data[0]['timestamp'],
-                                    1) / 1000) if self.sample_data else np.nan
+                            max(self.sample_data[-1]['timestamp'] - self.sample_data[0]['timestamp'],
+                                1) / 1000) if self.sample_data else np.nan
 
         # Saccade features
         for eye in ['left', 'right']:
@@ -556,8 +585,8 @@ class EyeLinkASCParser:
                     features[f'blink_{eye}_count'] = len(blink_df)
                     features[f'blink_{eye}_duration_mean'] = blink_df['duration'].mean()
                     features[f'blink_{eye}_rate'] = len(blink_df) / (
-                                max(self.sample_data[-1]['timestamp'] - self.sample_data[0]['timestamp'],
-                                    1) / 1000) if self.sample_data else np.nan
+                            max(self.sample_data[-1]['timestamp'] - self.sample_data[0]['timestamp'],
+                                1) / 1000) if self.sample_data else np.nan
 
         # Create a single-row DataFrame
         features_df = pd.DataFrame([features])
@@ -670,4 +699,3 @@ def process_multiple_files(file_paths: List[str], output_dir: str = None,
         return pd.concat(all_features, ignore_index=True)
 
     return pd.DataFrame()
-
