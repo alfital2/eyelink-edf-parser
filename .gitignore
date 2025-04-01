@@ -25,3 +25,10 @@ venv/
 # Logs and temp files
 *.log
 *.tmp
+
+# Keep folders but ignore their contents
+/results/*
+!/results/.gitkeep
+
+/eye_tracking_data/*
+!/eye_tracking_data/.gitkeep
