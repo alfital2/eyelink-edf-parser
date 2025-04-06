@@ -416,5 +416,5 @@ def plot_event_durations(result, output_path):
 
 
 if __name__ == "__main__":
-    # call analyze_and_verify_parser("asc_files/smiley_test.asc")
-    analyze_and_verify_parser("asc_files/sample_test.asc")
+    analyze_and_verify_parser("asc_files/smiley_test.asc")
+    # analyze_and_verify_parser("asc_files/sample_test.asc")

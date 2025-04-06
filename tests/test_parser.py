@@ -21,7 +21,7 @@ class TestEyeLinkASCParser(unittest.TestCase):
     def setUpClass(cls):
         """Set up test fixtures that are used for all tests."""
         # Path to the sample ASC file
-        cls.sample_asc_path = os.path.join(os.path.dirname(__file__), "sample_test.asc")
+        cls.sample_asc_path = os.path.join(os.path.dirname(__file__), "asc_files/sample_test.asc")
 
         # Ensure the sample file exists
         if not os.path.exists(cls.sample_asc_path):
