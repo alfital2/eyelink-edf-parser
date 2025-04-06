@@ -26,7 +26,7 @@ def run_tests():
     print("=" * 70)
     print(f"RUNNING TESTS FOR EYELINK ASC PARSER")
     print("=" * 70)
-    print(f"Sample ASC file: {Path(os.path.join(os.path.dirname(__file__), 'sample_test.asc')).resolve()}")
+    print(f"Sample ASC file: {Path(os.path.join(os.path.dirname(__file__), 'asc_files/sample_test.asc')).resolve()}")
     print(f"Test file: {Path(test_file).resolve()}")
     print("-" * 70)
 
@@ -75,7 +75,7 @@ def check_test_environment():
     tests_dir = os.path.dirname(__file__)
 
     # Check if the sample ASC file exists
-    sample_asc_path = os.path.join(tests_dir, "sample_test.asc")
+    sample_asc_path = os.path.join(tests_dir, "asc_files/sample_test.asc")
     if not os.path.exists(sample_asc_path):
         print(f"ERROR: Sample ASC file not found at {sample_asc_path}")
         print("Please ensure the sample_test.asc file is in the tests directory.")
@@ -114,7 +114,7 @@ def check_test_environment():
 def count_expected_events():
     """Count the expected events in the ASC file to help with testing."""
     tests_dir = os.path.dirname(__file__)
-    sample_asc_path = os.path.join(tests_dir, "sample_test.asc")
+    sample_asc_path = os.path.join(tests_dir, "asc_files/sample_test.asc")
 
     event_counts = {
         'SFIX L': 0, 'EFIX L': 0,
