@@ -67,42 +67,92 @@ class EyeLinkASCParser:
         """Extract all message markers from the file"""
         msg_pattern = re.compile(r'^MSG\s+(\d+)\s+(.+)')
 
+        # Add structures to track movie segments
+        self.movie_segments = []
+        current_movie = None
+        movie_start_time = None
+        movie_frames = {}  # To track frames for each movie
+
         for line in self.file_lines:
             if line.startswith('MSG'):
                 match = msg_pattern.match(line)
                 if match:
                     timestamp, content = match.groups()
+                    timestamp = int(timestamp)
 
-                    # Collect video frame markers
+                    # Check for movie file markers at start
+                    movie_start_match = re.search(r'^Movie File Name:\s*([\w\d\._-]+)$', content)
+                    if movie_start_match:
+                        movie_name = movie_start_match.group(1)
+
+                        # Start tracking new movie
+                        current_movie = movie_name
+                        movie_start_time = timestamp
+                        # Initialize frame tracking for this movie if needed
+                        if current_movie not in movie_frames:
+                            movie_frames[current_movie] = {}
+
+                    # Check for movie file markers at end
+                    movie_end_match = re.search(r'^Movie File Name:\s*([\w\d\._-]+)\.\s+Displayed Frame Count:\s+(\d+)',
+                                                content)
+                    if movie_end_match:
+                        movie_name = movie_end_match.group(1)
+                        frame_count = int(movie_end_match.group(2))
+
+                        # If this is the current movie, close the segment
+                        if current_movie == movie_name and movie_start_time is not None:
+                            self.movie_segments.append({
+                                'movie_name': current_movie,
+                                'start_time': movie_start_time,
+                                'end_time': timestamp,
+                                'frames': movie_frames.get(current_movie, {}),
+                                'frame_count': frame_count
+                            })
+
+                            # Reset tracking
+                            current_movie = None
+                            movie_start_time = None
+
+                    # Track frame markers
                     frame_match = re.search(r'Play_Movie_Start FRAME #(\d+)', content)
                     if frame_match:
                         frame_num = int(frame_match.group(1))
-                        self.frame_markers.append({
-                            'timestamp': int(timestamp),
-                            'frame': frame_num,
-                            'content': content
-                        })
 
-                    # Extract calibration info
-                    if '!CAL' in content:
-                        # Store calibration data in a separate structure
-                        if 'CALIBRATION' in content:
-                            calibration_type = re.search(r'CALIBRATION\s+(\w+)', content)
-                            if calibration_type:
-                                self.calibration_info['type'] = calibration_type.group(1)
-                        # Calibration validation results
-                        validation_match = re.search(r'VALIDATION.+?(\w+)\s+ERROR\s+([\d.]+)\s+avg\.\s+([\d.]+)',
-                                                     content)
-                        if validation_match:
-                            quality, avg_error, max_error = validation_match.groups()
-                            self.calibration_info['quality'] = quality
-                            self.calibration_info['avg_error'] = float(avg_error)
+                        # Create frame marker
+                        frame_marker = {
+                            'timestamp': timestamp,
+                            'frame': frame_num,
+                            'content': content,
+                            'movie_name': current_movie  # Associate frame with current movie
+                        }
+
+                        # Add to general frame markers list
+                        self.frame_markers.append(frame_marker)
+
+                        # Also track in the movie-specific frames dictionary
+                        if current_movie is not None:
+                            if current_movie not in movie_frames:
+                                movie_frames[current_movie] = {}
+                            movie_frames[current_movie][frame_num] = timestamp
 
                     # Store general message
                     self.messages.append({
-                        'timestamp': int(timestamp),
+                        'timestamp': timestamp,
                         'content': content
                     })
+
+        # If there's a movie still open (though there shouldn't be based on the file format),
+        # close it as a safeguard
+        if current_movie is not None and movie_start_time is not None:
+            # Use the last timestamp as the end time
+            end_time = int(self.file_lines[-1].split()[0]) if self.file_lines else None
+
+            self.movie_segments.append({
+                'movie_name': current_movie,
+                'start_time': movie_start_time,
+                'end_time': end_time,
+                'frames': movie_frames.get(current_movie, {})
+            })
 
         return self.messages
 
@@ -429,8 +479,7 @@ class EyeLinkASCParser:
                     mask = (unified_df['timestamp'] >= fix['start_time']) & (unified_df['timestamp'] <= fix['end_time'])
                     unified_df.loc[mask, f'is_fixation_{eye}'] = True
 
-        # Mark saccade periods
-        for eye in ['left', 'right']:
+            # Mark saccade periods
             for sacc in self.saccades[eye]:
                 if 'start_time' in sacc and 'end_time' in sacc:
                     # Mark samples within saccade period
@@ -438,8 +487,7 @@ class EyeLinkASCParser:
                             unified_df['timestamp'] <= sacc['end_time'])
                     unified_df.loc[mask, f'is_saccade_{eye}'] = True
 
-        # Mark blink periods
-        for eye in ['left', 'right']:
+            # Mark blink periods
             for blink in self.blinks[eye]:
                 if 'start_time' in blink and 'end_time' in blink:
                     # Mark samples within blink period
@@ -447,10 +495,71 @@ class EyeLinkASCParser:
                             unified_df['timestamp'] <= blink['end_time'])
                     unified_df.loc[mask, f'is_blink_{eye}'] = True
 
+        # Add movie_name and frame_number columns
+        unified_df['movie_name'] = None
+        unified_df['frame_number'] = None
+
+        # If we have movie segments, assign movie names and frame numbers
+        if hasattr(self, 'movie_segments') and self.movie_segments:
+            for movie_segment in self.movie_segments:
+                movie_name = movie_segment['movie_name']
+                start_time = movie_segment['start_time']
+                end_time = movie_segment['end_time']
+                frames = movie_segment.get('frames', {})
+
+                # Create mask for this movie segment
+                movie_mask = (unified_df['timestamp'] >= start_time) & (unified_df['timestamp'] <= end_time)
+
+                # Mark movie name
+                unified_df.loc[movie_mask, 'movie_name'] = movie_name
+
+                # Now assign frame numbers based on timestamps
+                frame_timestamps = sorted([(frame_num, ts) for frame_num, ts in frames.items()],
+                                          key=lambda x: x[1])  # Sort by timestamp
+
+                if frame_timestamps:
+                    # For each pair of consecutive frames, assign the frame number to all timestamps in between
+                    for i in range(len(frame_timestamps) - 1):
+                        current_frame, current_ts = frame_timestamps[i]
+                        next_ts = frame_timestamps[i + 1][1]
+
+                        # Create mask for timestamps in this frame's range
+                        frame_mask = (unified_df['timestamp'] >= current_ts) & (unified_df['timestamp'] < next_ts)
+                        unified_df.loc[frame_mask, 'frame_number'] = current_frame
+
+                    # Handle the last frame
+                    last_frame, last_ts = frame_timestamps[-1]
+                    last_frame_mask = (unified_df['timestamp'] >= last_ts) & (unified_df['timestamp'] <= end_time)
+                    unified_df.loc[last_frame_mask, 'frame_number'] = last_frame
+
+        # Reorder columns to place frame_number right after timestamp
+        if 'frame_number' in unified_df.columns:
+            cols = unified_df.columns.tolist()
+            cols.remove('frame_number')
+            cols.insert(1, 'frame_number')  # Insert after timestamp (index 0)
+            unified_df = unified_df[cols]
+
         return unified_df
 
     def save_to_csv(self, output_dir: str = None):
-        """Save all DataFrames to CSV files"""
+        """
+        Save all DataFrames to CSV files, with separate folders for each movie.
+
+        This creates a folder structure like:
+        output_dir/
+        ├── Children-play-finalX/
+        │   ├── participant_id_unified_eye_metrics_Children-play-finalX.csv
+        │   └── plots/
+        │       └── [visualization plots for this movie]
+        ├── Dyad-girl-finalX/
+        │   ├── participant_id_unified_eye_metrics_Dyad-girl-finalX.csv
+        │   └── plots/
+        │       └── [visualization plots for this movie]
+        └── general/
+            ├── participant_id_metadata.csv
+            ├── participant_id_fixations_left.csv
+            └── [other general data files]
+        """
         if output_dir is None:
             # Use same directory as the ASC file
             output_dir = os.path.dirname(self.file_path)
@@ -458,23 +567,65 @@ class EyeLinkASCParser:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        base_name = os.path.splitext(os.path.basename(self.file_path))[0]
+        # Get participant ID from file name
+        participant_id = os.path.splitext(os.path.basename(self.file_path))[0]
+
+        # Create general directory for participant-wide data
+        general_dir = os.path.join(output_dir, "general")
+        os.makedirs(general_dir, exist_ok=True)
 
         # Get all dataframes
         dfs = self.to_dataframes()
-
-        # Save each DataFrame to a separate CSV file
         saved_files = []
-        for df_name, df in dfs.items():
-            output_path = os.path.join(output_dir, f"{base_name}_{df_name}.csv")
-            df.to_csv(output_path, index=False)
-            saved_files.append(output_path)
-            print(f"Saved {df_name} to {output_path}")
 
-        # Save metadata as a separate file
+        # Handle unified eye metrics specially - separate by movie
+        if 'unified_eye_metrics' in dfs and hasattr(self, 'movie_segments') and self.movie_segments:
+            unified_df = dfs['unified_eye_metrics']
+
+            for movie_segment in self.movie_segments:
+                movie_name = movie_segment['movie_name']
+                start_time = movie_segment['start_time']
+                end_time = movie_segment['end_time']
+
+                # Clean movie name for folder and filename
+                clean_movie_name = re.sub(r'[^\w\d-]', '_', os.path.splitext(movie_name)[0])
+
+                # Create movie directory at the top level
+                movie_dir = os.path.join(output_dir, clean_movie_name)
+                os.makedirs(movie_dir, exist_ok=True)
+
+                # Create plots directory inside movie directory
+                plots_dir = os.path.join(movie_dir, "plots")
+                os.makedirs(plots_dir, exist_ok=True)
+
+                # Filter data for this movie segment
+                movie_mask = (unified_df['timestamp'] >= start_time) & (unified_df['timestamp'] <= end_time)
+                movie_data = unified_df[movie_mask].copy()
+
+                # We can drop the movie_name column since it's redundant with the folder
+                if 'movie_name' in movie_data.columns:
+                    movie_data = movie_data.drop(columns=['movie_name'])
+
+                if not movie_data.empty:
+                    # Save to movie-specific file
+                    movie_file_path = os.path.join(movie_dir,
+                                                   f"{participant_id}_unified_eye_metrics_{clean_movie_name}.csv")
+                    movie_data.to_csv(movie_file_path, index=False)
+                    saved_files.append(movie_file_path)
+                    print(f"Saved unified eye metrics for movie {clean_movie_name} to {movie_file_path}")
+
+        # Save other DataFrames to the general directory
+        for df_name, df in dfs.items():
+            if df_name != 'unified_eye_metrics':  # Skip unified metrics as it's handled specially
+                output_path = os.path.join(general_dir, f"{participant_id}_{df_name}.csv")
+                df.to_csv(output_path, index=False)
+                saved_files.append(output_path)
+                print(f"Saved {df_name} to {output_path}")
+
+        # Save metadata as a separate file in the general directory
         if self.metadata:
             metadata_df = pd.DataFrame(list(self.metadata.items()), columns=['key', 'value'])
-            metadata_path = os.path.join(output_dir, f"{base_name}_metadata.csv")
+            metadata_path = os.path.join(general_dir, f"{participant_id}_metadata.csv")
             metadata_df.to_csv(metadata_path, index=False)
             saved_files.append(metadata_path)
             print(f"Saved metadata to {metadata_path}")
