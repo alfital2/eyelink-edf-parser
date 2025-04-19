@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import re
 import os
-from typing import Dict, List, Tuple, Union, Optional
+from typing import Dict, List
 
 
 class EyeLinkASCParser:
@@ -42,6 +42,22 @@ class EyeLinkASCParser:
             'cr_info', 'cr_left', 'cr_right', 'cr_area'
         ]
 
+        # Precompile regular expressions for better performance
+        self.meta_pattern = re.compile(r'^\*\* (.+?):\s*(.+)')
+        self.msg_pattern = re.compile(r'^MSG\s+(\d+)\s+(.+)')
+        self.movie_start_pattern = re.compile(r'^Movie File Name:\s*([\w\d\._-]+)$')
+        self.movie_end_pattern = re.compile(r'^Movie File Name:\s*([\w\d\._-]+)\.\s+Displayed Frame Count:\s+(\d+)')
+        self.frame_pattern = re.compile(r'Play_Movie_Start FRAME #(\d+)')
+
+        # Precompile event patterns
+        self.fix_start_pattern = re.compile(r'^SFIX\s+([LR])\s+(\d+)')
+        self.fix_end_pattern = re.compile(r'^EFIX\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.-]+)\s+([\d.-]+)\s+(\d+)')
+        self.sacc_start_pattern = re.compile(r'^SSACC\s+([LR])\s+(\d+)')
+        self.sacc_end_pattern = re.compile(
+            r'^ESACC\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+(\d+)')
+        self.blink_start_pattern = re.compile(r'^SBLINK\s+([LR])\s+(\d+)')
+        self.blink_end_pattern = re.compile(r'^EBLINK\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)')
+
     def read_file(self):
         """Read the ASC file and store lines"""
         with open(self.file_path, 'r', encoding='utf-8', errors='replace') as f:
@@ -50,10 +66,9 @@ class EyeLinkASCParser:
 
     def parse_metadata(self):
         """Extract metadata from the file header"""
-        meta_pattern = re.compile(r'^\*\* (.+?):\s*(.+)')
         for line in self.file_lines:
             if line.startswith('**'):
-                match = meta_pattern.match(line)
+                match = self.meta_pattern.match(line)
                 if match:
                     key, value = match.groups()
                     self.metadata[key.strip()] = value.strip()
@@ -65,8 +80,6 @@ class EyeLinkASCParser:
 
     def parse_messages(self):
         """Extract all message markers from the file"""
-        msg_pattern = re.compile(r'^MSG\s+(\d+)\s+(.+)')
-
         # Add structures to track movie segments
         self.movie_segments = []
         current_movie = None
@@ -75,13 +88,13 @@ class EyeLinkASCParser:
 
         for line in self.file_lines:
             if line.startswith('MSG'):
-                match = msg_pattern.match(line)
+                match = self.msg_pattern.match(line)
                 if match:
                     timestamp, content = match.groups()
                     timestamp = int(timestamp)
 
                     # Check for movie file markers at start
-                    movie_start_match = re.search(r'^Movie File Name:\s*([\w\d\._-]+)$', content)
+                    movie_start_match = self.movie_start_pattern.search(content)
                     if movie_start_match:
                         movie_name = movie_start_match.group(1)
 
@@ -93,8 +106,7 @@ class EyeLinkASCParser:
                             movie_frames[current_movie] = {}
 
                     # Check for movie file markers at end
-                    movie_end_match = re.search(r'^Movie File Name:\s*([\w\d\._-]+)\.\s+Displayed Frame Count:\s+(\d+)',
-                                                content)
+                    movie_end_match = self.movie_end_pattern.search(content)
                     if movie_end_match:
                         movie_name = movie_end_match.group(1)
                         frame_count = int(movie_end_match.group(2))
@@ -114,7 +126,7 @@ class EyeLinkASCParser:
                             movie_start_time = None
 
                     # Track frame markers
-                    frame_match = re.search(r'Play_Movie_Start FRAME #(\d+)', content)
+                    frame_match = self.frame_pattern.search(content)
                     if frame_match:
                         frame_num = int(frame_match.group(1))
 
@@ -158,6 +170,9 @@ class EyeLinkASCParser:
 
     def parse_samples(self):
         """Extract eye movement samples (positions, pupil size, etc.)"""
+        # Preallocate a reasonable sized list based on file size
+        self.sample_data = []
+
         # Sample line pattern: timestamp  x_left  y_left  pupil_left  x_right  y_right  pupil_right  input ...
         for line in self.file_lines:
             # Skip non-data lines
@@ -196,136 +211,111 @@ class EyeLinkASCParser:
 
         return len(self.sample_data)
 
-    import re
-
     def parse_events(self):
-        """Extract fixations, saccades, and blinks"""
+        """Extract fixations, saccades, and blinks using optimized approach"""
 
-        # Fixation Start: Match a line like "SFIX L 123456"
-        fix_start_pattern = re.compile(r'^SFIX\s+([LR])\s+(\d+)')
-
-        # Fixation End: Match a line like "EFIX L 123456 123789 333 400.0 300.0 100"
-        # Group 1: eye (L/R), 2: start time, 3: end time, 4: duration, 5: x, 6: y, 7: pupil size
-        fix_end_pattern = re.compile(r'^EFIX\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.-]+)\s+([\d.-]+)\s+(\d+)')
-
-        # Saccade Start: Match a line like "SSACC R 456789"
-        sacc_start_pattern = re.compile(r'^SSACC\s+([LR])\s+(\d+)')
-
-        # Saccade End: Match a line like "ESACC R 456789 457000 211 300.0 200.0 400.0 250.0 150.0 500"
-        # Group 1: eye, 2: start, 3: end, 4: duration, 5-6: start_x/y, 7-8: end_x/y, 9: amplitude, 10: peak velocity
-        sacc_end_pattern = re.compile(
-            r'^ESACC\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+(\d+)')
-
-        # Blink Start: Match a line like "SBLINK L 567890"
-        blink_start_pattern = re.compile(r'^SBLINK\s+([LR])\s+(\d+)')
-
-        # Blink End: Match a line like "EBLINK L 567890 568100 210"
-        # Group 1: eye, 2: start, 3: end, 4: duration
-        blink_end_pattern = re.compile(r'^EBLINK\s+([LR])\s+(\d+)\s+(\d+)\s+(\d+)')
-
-        # Temporary storage for events
+        # Temporary storage for events with efficient dictionary operations
         temp_fixations = {'left': {}, 'right': {}}
         temp_saccades = {'left': {}, 'right': {}}
         temp_blinks = {'left': {}, 'right': {}}
 
         for line in self.file_lines:
-            # Fixation start
-            match = fix_start_pattern.match(line)
-            if match:
-                eye, timestamp = match.groups()
-                eye_key = 'left' if eye == 'L' else 'right'
-                temp_fixations[eye_key][int(timestamp)] = {
-                    'start_time': int(timestamp),
-                    'end_time': None,
-                    'duration': None,
-                    'x': None,
-                    'y': None,
-                    'pupil': None
-                }
-                continue
+            # Process each event type
+            if line.startswith('SFIX'):
+                match = self.fix_start_pattern.match(line)
+                if match:
+                    eye, timestamp = match.groups()
+                    eye_key = 'left' if eye == 'L' else 'right'
+                    temp_fixations[eye_key].setdefault(int(timestamp), {
+                        'start_time': int(timestamp),
+                        'end_time': None,
+                        'duration': None,
+                        'x': None,
+                        'y': None,
+                        'pupil': None
+                    })
 
-            # Fixation end
-            match = fix_end_pattern.match(line)
-            if match:
-                eye, start, end, duration, x, y, pupil = match.groups()
-                eye_key = 'left' if eye == 'L' else 'right'
-                start_time = int(start)
-                data = {
-                    'start_time': start_time,
-                    'end_time': int(end),
-                    'duration': int(duration),
-                    'x': float(x),
-                    'y': float(y),
-                    'pupil': float(pupil)
-                }
-                temp_fixations[eye_key][start_time] = {**temp_fixations[eye_key].get(start_time, {}), **data}
-                continue
+            elif line.startswith('EFIX'):
+                match = self.fix_end_pattern.match(line)
+                if match:
+                    eye, start, end, duration, x, y, pupil = match.groups()
+                    eye_key = 'left' if eye == 'L' else 'right'
+                    start_time = int(start)
 
-            # Saccade start
-            match = sacc_start_pattern.match(line)
-            if match:
-                eye, timestamp = match.groups()
-                eye_key = 'left' if eye == 'L' else 'right'
-                temp_saccades[eye_key][int(timestamp)] = {
-                    'start_time': int(timestamp),
-                    'end_time': None,
-                    'duration': None,
-                    'start_x': None,
-                    'start_y': None,
-                    'end_x': None,
-                    'end_y': None,
-                    'amplitude': None,
-                    'peak_velocity': None
-                }
-                continue
+                    # Use dictionary update to efficiently merge data
+                    entry = temp_fixations[eye_key].setdefault(start_time, {'start_time': start_time})
+                    entry.update({
+                        'end_time': int(end),
+                        'duration': int(duration),
+                        'x': float(x),
+                        'y': float(y),
+                        'pupil': float(pupil)
+                    })
 
-            # Saccade end
-            match = sacc_end_pattern.match(line)
-            if match:
-                (eye, start, end, duration, start_x, start_y, end_x,
-                 end_y, amplitude, peak_velocity) = match.groups()
-                eye_key = 'left' if eye == 'L' else 'right'
-                start_time = int(start)
-                data = {
-                    'start_time': start_time,
-                    'end_time': int(end),
-                    'duration': int(duration),
-                    'start_x': float(start_x),
-                    'start_y': float(start_y),
-                    'end_x': float(end_x),
-                    'end_y': float(end_y),
-                    'amplitude': float(amplitude),
-                    'peak_velocity': float(peak_velocity)
-                }
-                temp_saccades[eye_key][start_time] = {**temp_saccades[eye_key].get(start_time, {}), **data}
-                continue
+            elif line.startswith('SSACC'):
+                match = self.sacc_start_pattern.match(line)
+                if match:
+                    eye, timestamp = match.groups()
+                    eye_key = 'left' if eye == 'L' else 'right'
+                    temp_saccades[eye_key].setdefault(int(timestamp), {
+                        'start_time': int(timestamp),
+                        'end_time': None,
+                        'duration': None,
+                        'start_x': None,
+                        'start_y': None,
+                        'end_x': None,
+                        'end_y': None,
+                        'amplitude': None,
+                        'peak_velocity': None
+                    })
 
-            # Blink start
-            match = blink_start_pattern.match(line)
-            if match:
-                eye, timestamp = match.groups()
-                eye_key = 'left' if eye == 'L' else 'right'
-                temp_blinks[eye_key][int(timestamp)] = {
-                    'start_time': int(timestamp),
-                    'end_time': None,
-                    'duration': None
-                }
-                continue
+            elif line.startswith('ESACC'):
+                match = self.sacc_end_pattern.match(line)
+                if match:
+                    (eye, start, end, duration, start_x, start_y, end_x,
+                     end_y, amplitude, peak_velocity) = match.groups()
+                    eye_key = 'left' if eye == 'L' else 'right'
+                    start_time = int(start)
 
-            # Blink end
-            match = blink_end_pattern.match(line)
-            if match:
-                eye, start, end, duration = match.groups()
-                eye_key = 'left' if eye == 'L' else 'right'
-                start_time = int(start)
-                data = {
-                    'start_time': start_time,
-                    'end_time': int(end),
-                    'duration': int(duration)
-                }
-                temp_blinks[eye_key][start_time] = {**temp_blinks[eye_key].get(start_time, {}), **data}
+                    # Use dictionary update for efficiency
+                    entry = temp_saccades[eye_key].setdefault(start_time, {'start_time': start_time})
+                    entry.update({
+                        'end_time': int(end),
+                        'duration': int(duration),
+                        'start_x': float(start_x),
+                        'start_y': float(start_y),
+                        'end_x': float(end_x),
+                        'end_y': float(end_y),
+                        'amplitude': float(amplitude),
+                        'peak_velocity': float(peak_velocity)
+                    })
 
-        # Convert dicts to lists
+            elif line.startswith('SBLINK'):
+                match = self.blink_start_pattern.match(line)
+                if match:
+                    eye, timestamp = match.groups()
+                    eye_key = 'left' if eye == 'L' else 'right'
+                    temp_blinks[eye_key].setdefault(int(timestamp), {
+                        'start_time': int(timestamp),
+                        'end_time': None,
+                        'duration': None
+                    })
+
+            elif line.startswith('EBLINK'):
+                match = self.blink_end_pattern.match(line)
+                if match:
+                    eye, start, end, duration = match.groups()
+                    eye_key = 'left' if eye == 'L' else 'right'
+                    start_time = int(start)
+
+                    # Use dictionary update for efficiency
+                    entry = temp_blinks[eye_key].setdefault(start_time, {'start_time': start_time})
+                    entry.update({
+                        'end_time': int(end),
+                        'duration': int(duration)
+                    })
+
+        # Convert dictionaries to lists
         for eye in ['left', 'right']:
             self.fixations[eye] = list(temp_fixations[eye].values())
             self.saccades[eye] = list(temp_saccades[eye].values())
@@ -409,156 +399,119 @@ class EyeLinkASCParser:
     def create_unified_metrics_df(self) -> pd.DataFrame:
         """
         Create a unified dataframe with all eye and head movement metrics.
-        This combines the relevant data from samples into a single, easy-to-analyze format.
-
+        Combines the relevant data from samples into a single, easy-to-analyze format.
         Returns:
-            DataFrame with timestamps and all eye/head metrics
+            DataFrame with timestamps and all eye/head metrics.
         """
-        # Start with the sample data which has timestamps
+
+        def create_event_mask(events, timestamps):
+            mask = np.zeros(len(timestamps), dtype=bool)
+            for event in events:
+                if 'start_time' in event and 'end_time' in event and event['end_time'] is not None:
+                    start, end = event['start_time'], event['end_time']
+                    event_mask = (timestamps >= start) & (timestamps <= end)
+                    mask |= event_mask
+            return mask
+
         unified_df = pd.DataFrame(self.sample_data)
 
-        # Calculate the head movement metrics
-        if 'x_left' in unified_df.columns and 'cr_left' in unified_df.columns:
-            # Calculate head movement for each eye
-            # The distance between pupil center and corneal reflection changes with head movement
+        # Calculate head movement metrics
+        if {'x_left', 'cr_left', 'x_right', 'cr_right'}.issubset(unified_df.columns):
             unified_df['head_movement_left_x'] = unified_df['x_left'] - unified_df['cr_left']
             unified_df['head_movement_right_x'] = unified_df['x_right'] - unified_df['cr_right']
-
-            # Calculate overall head movement magnitude (Euclidean distance)
             unified_df['head_movement_magnitude'] = np.sqrt(
                 unified_df['head_movement_left_x'] ** 2 + unified_df['head_movement_right_x'] ** 2
             )
 
-        # Calculate inter-pupil distance (can indicate depth changes)
-        if 'x_left' in unified_df.columns and 'x_right' in unified_df.columns:
+        # Calculate inter-pupil distance
+        if {'x_left', 'x_right', 'y_left', 'y_right'}.issubset(unified_df.columns):
             unified_df['inter_pupil_distance'] = np.sqrt(
                 (unified_df['x_right'] - unified_df['x_left']) ** 2 +
                 (unified_df['y_right'] - unified_df['y_left']) ** 2
             )
 
-        # Calculate gaze velocity for each eye
-        unified_df['gaze_velocity_left'] = np.nan
-        unified_df['gaze_velocity_right'] = np.nan
+        # Init event flags
+        for eye in ['left', 'right']:
+            unified_df[f'is_fixation_{eye}'] = False
+            unified_df[f'is_saccade_{eye}'] = False
+            unified_df[f'is_blink_{eye}'] = False
 
-        # Calculate velocity (degree/second) based on position changes
+        # Calculate gaze velocity
         if len(unified_df) > 1:
+            timestamps = unified_df['timestamp'].values
             for eye in ['left', 'right']:
                 x_col, y_col = f'x_{eye}', f'y_{eye}'
                 vel_col = f'gaze_velocity_{eye}'
 
-                # Calculate position difference
-                x_diff = unified_df[x_col].diff()
-                y_diff = unified_df[y_col].diff()
+                if {x_col, y_col}.issubset(unified_df.columns):
+                    x_pos = unified_df[x_col].values
+                    y_pos = unified_df[y_col].values
+                    dt = np.diff(timestamps) / 1000.0
+                    dx = np.diff(x_pos)
+                    dy = np.diff(y_pos)
 
-                # Calculate time difference in seconds
-                time_diff = unified_df['timestamp'].diff() / 1000.0
+                    distances = np.sqrt(dx ** 2 + dy ** 2)
+                    velocities = np.zeros_like(timestamps, dtype=float)
+                    velocities[1:] = distances / dt
+                    velocities[0] = np.nan
 
-                # Calculate Euclidean distance
-                distance = np.sqrt(x_diff ** 2 + y_diff ** 2)
+                    unified_df[vel_col] = np.where(np.isfinite(velocities), velocities, np.nan)
 
-                # Calculate velocity (pixels/second)
-                velocity_values = distance / time_diff
-
-                # Replace infinite values with NaN (fix for FutureWarning)
-                velocity_values = velocity_values.replace([np.inf, -np.inf], np.nan)
-                unified_df[vel_col] = velocity_values
-
-        # Add indicators for events
-        unified_df['is_fixation_left'] = False
-        unified_df['is_fixation_right'] = False
-        unified_df['is_saccade_left'] = False
-        unified_df['is_saccade_right'] = False
-        unified_df['is_blink_left'] = False
-        unified_df['is_blink_right'] = False
-
-        # Mark fixation periods
+        # Assign event masks
+        timestamps = unified_df['timestamp'].values
         for eye in ['left', 'right']:
-            for fix in self.fixations[eye]:
-                if 'start_time' in fix and 'end_time' in fix:
-                    # Mark samples within fixation period
-                    mask = (unified_df['timestamp'] >= fix['start_time']) & (unified_df['timestamp'] <= fix['end_time'])
-                    unified_df.loc[mask, f'is_fixation_{eye}'] = True
+            unified_df[f'is_fixation_{eye}'] = create_event_mask(self.fixations[eye], timestamps)
+            unified_df[f'is_saccade_{eye}'] = create_event_mask(self.saccades[eye], timestamps)
+            unified_df[f'is_blink_{eye}'] = create_event_mask(self.blinks[eye], timestamps)
 
-            # Mark saccade periods
-            for sacc in self.saccades[eye]:
-                if 'start_time' in sacc and 'end_time' in sacc:
-                    # Mark samples within saccade period
-                    mask = (unified_df['timestamp'] >= sacc['start_time']) & (
-                            unified_df['timestamp'] <= sacc['end_time'])
-                    unified_df.loc[mask, f'is_saccade_{eye}'] = True
-
-            # Mark blink periods
-            for blink in self.blinks[eye]:
-                if 'start_time' in blink and 'end_time' in blink:
-                    # Mark samples within blink period
-                    mask = (unified_df['timestamp'] >= blink['start_time']) & (
-                            unified_df['timestamp'] <= blink['end_time'])
-                    unified_df.loc[mask, f'is_blink_{eye}'] = True
-
-        # Add movie_name and frame_number columns
+        # Add movie_name and frame_number
         unified_df['movie_name'] = None
         unified_df['frame_number'] = None
 
-        # If we have movie segments, assign movie names and frame numbers
         if hasattr(self, 'movie_segments') and self.movie_segments:
-            for movie_segment in self.movie_segments:
-                movie_name = movie_segment['movie_name']
-                start_time = movie_segment['start_time']
-                end_time = movie_segment['end_time']
-                frames = movie_segment.get('frames', {})
+            for segment in self.movie_segments:
+                movie_name = segment['movie_name']
+                start_time = segment['start_time']
+                end_time = segment['end_time']
+                frames = segment.get('frames', {})
 
-                # Create mask for this movie segment
                 movie_mask = (unified_df['timestamp'] >= start_time) & (unified_df['timestamp'] <= end_time)
-
-                # Mark movie name
                 unified_df.loc[movie_mask, 'movie_name'] = movie_name
 
-                # Now assign frame numbers based on timestamps
-                frame_timestamps = sorted([(frame_num, ts) for frame_num, ts in frames.items()],
-                                          key=lambda x: x[1])  # Sort by timestamp
+                frame_timestamps = sorted(frames.items(), key=lambda x: x[1])
+                for i in range(len(frame_timestamps) - 1):
+                    current_frame, current_ts = frame_timestamps[i]
+                    next_ts = frame_timestamps[i + 1][1]
+                    frame_mask = (unified_df['timestamp'] >= current_ts) & (unified_df['timestamp'] < next_ts)
+                    unified_df.loc[frame_mask, 'frame_number'] = current_frame
 
                 if frame_timestamps:
-                    # For each pair of consecutive frames, assign the frame number to all timestamps in between
-                    for i in range(len(frame_timestamps) - 1):
-                        current_frame, current_ts = frame_timestamps[i]
-                        next_ts = frame_timestamps[i + 1][1]
-
-                        # Create mask for timestamps in this frame's range
-                        frame_mask = (unified_df['timestamp'] >= current_ts) & (unified_df['timestamp'] < next_ts)
-                        unified_df.loc[frame_mask, 'frame_number'] = current_frame
-
-                    # Handle the last frame
                     last_frame, last_ts = frame_timestamps[-1]
-                    last_frame_mask = (unified_df['timestamp'] >= last_ts) & (unified_df['timestamp'] <= end_time)
-                    unified_df.loc[last_frame_mask, 'frame_number'] = last_frame
+                    last_mask = (unified_df['timestamp'] >= last_ts) & (unified_df['timestamp'] <= end_time)
+                    unified_df.loc[last_mask, 'frame_number'] = last_frame
 
-        # Reorder columns to place frame_number right after timestamp
-        if 'frame_number' in unified_df.columns:
-            cols = unified_df.columns.tolist()
-            cols.remove('frame_number')
-            cols.insert(1, 'frame_number')  # Insert after timestamp (index 0)
-            unified_df = unified_df[cols]
+        # Reorder columns
+        desired_order = [
+            'timestamp', 'frame_number', 'x_left', 'y_left', 'pupil_left',
+            'x_right', 'y_right', 'pupil_right', 'input', 'cr_info',
+            'cr_left', 'cr_right', 'head_movement_left_x', 'head_movement_right_x',
+            'head_movement_magnitude', 'inter_pupil_distance',
+            'gaze_velocity_left', 'gaze_velocity_right',
+            'is_fixation_left', 'is_fixation_right',
+            'is_saccade_left', 'is_saccade_right',
+            'is_blink_left', 'is_blink_right'
+        ]
+        actual_columns = list(unified_df.columns)
+        ordered_columns = [col for col in desired_order if col in actual_columns]
+        remaining_columns = [col for col in actual_columns if col not in desired_order]
+        unified_df = unified_df[ordered_columns + remaining_columns]
 
         return unified_df
+
 
     def save_to_csv(self, output_dir: str = None):
         """
         Save all DataFrames to CSV files, with separate folders for each movie.
-
-        This creates a folder structure like:
-        output_dir/
-        ├── Children-play-finalX/
-        │   ├── participant_id_unified_eye_metrics_Children-play-finalX.csv
-        │   └── plots/
-        │       └── [visualization plots for this movie]
-        ├── Dyad-girl-finalX/
-        │   ├── participant_id_unified_eye_metrics_Dyad-girl-finalX.csv
-        │   └── plots/
-        │       └── [visualization plots for this movie]
-        └── general/
-            ├── participant_id_metadata.csv
-            ├── participant_id_fixations_left.csv
-            └── [other general data files]
         """
         if output_dir is None:
             # Use same directory as the ASC file
@@ -635,6 +588,7 @@ class EyeLinkASCParser:
     def extract_features(self) -> pd.DataFrame:
         """
         Extract key features for machine learning analysis focused on autism research.
+        Optimized using aggregated statistics calculations.
 
         Returns:
             DataFrame with aggregate features that might be relevant for autism classification
@@ -646,33 +600,40 @@ class EyeLinkASCParser:
 
         # Sample statistics
         if len(self.sample_data) > 0:
+            # Create DataFrame only once
             samples_df = pd.DataFrame(self.sample_data)
 
-            # Pupil size features
+            # Calculate pupil size statistics using aggregation
             for eye in ['left', 'right']:
                 pupil_col = f'pupil_{eye}'
                 if pupil_col in samples_df.columns:
-                    features[f'pupil_{eye}_mean'] = samples_df[pupil_col].mean()
-                    features[f'pupil_{eye}_std'] = samples_df[pupil_col].std()
-                    features[f'pupil_{eye}_min'] = samples_df[pupil_col].min()
-                    features[f'pupil_{eye}_max'] = samples_df[pupil_col].max()
+                    # Calculate all statistics at once
+                    pupil_stats = samples_df[pupil_col].agg(['mean', 'std', 'min', 'max'])
+                    features[f'pupil_{eye}_mean'] = pupil_stats['mean']
+                    features[f'pupil_{eye}_std'] = pupil_stats['std']
+                    features[f'pupil_{eye}_min'] = pupil_stats['min']
+                    features[f'pupil_{eye}_max'] = pupil_stats['max']
 
             # Gaze position variability (reflects scan patterns)
             for eye in ['left', 'right']:
                 x_col, y_col = f'x_{eye}', f'y_{eye}'
                 if x_col in samples_df.columns and y_col in samples_df.columns:
-                    features[f'gaze_{eye}_x_std'] = samples_df[x_col].std()
-                    features[f'gaze_{eye}_y_std'] = samples_df[y_col].std()
+                    # Calculate standard deviations
+                    gaze_stats_x = samples_df[x_col].agg(['std', 'min', 'max'])
+                    gaze_stats_y = samples_df[y_col].agg(['std', 'min', 'max'])
+
+                    features[f'gaze_{eye}_x_std'] = gaze_stats_x['std']
+                    features[f'gaze_{eye}_y_std'] = gaze_stats_y['std']
 
                     # Calculate dispersion (total area covered by gaze)
-                    x_range = samples_df[x_col].max() - samples_df[x_col].min()
-                    y_range = samples_df[y_col].max() - samples_df[y_col].min()
+                    x_range = gaze_stats_x['max'] - gaze_stats_x['min']
+                    y_range = gaze_stats_y['max'] - gaze_stats_y['min']
                     features[f'gaze_{eye}_dispersion'] = x_range * y_range if not np.isnan(x_range) and not np.isnan(
                         y_range) else np.nan
 
-            # Head movement features
+            # Head movement features - vectorized calculations
             if 'cr_left' in samples_df.columns and 'x_left' in samples_df.columns:
-                # Calculate head movement metrics
+                # Calculate head movement metrics vectorized
                 samples_df['head_movement_left_x'] = samples_df['x_left'] - samples_df['cr_left']
                 samples_df['head_movement_right_x'] = samples_df['x_right'] - samples_df['cr_right']
 
@@ -681,10 +642,11 @@ class EyeLinkASCParser:
                     samples_df['head_movement_left_x'] ** 2 + samples_df['head_movement_right_x'] ** 2
                 )
 
-                # Extract features
-                features['head_movement_mean'] = samples_df['head_movement_magnitude'].mean()
-                features['head_movement_std'] = samples_df['head_movement_magnitude'].std()
-                features['head_movement_max'] = samples_df['head_movement_magnitude'].max()
+                # Extract features with aggregation
+                head_movement_stats = samples_df['head_movement_magnitude'].agg(['mean', 'std', 'max'])
+                features['head_movement_mean'] = head_movement_stats['mean']
+                features['head_movement_std'] = head_movement_stats['std']
+                features['head_movement_max'] = head_movement_stats['max']
 
                 # Calculate movement frequency - number of direction changes
                 head_dir_changes = ((samples_df['head_movement_magnitude'].diff() > 0) !=
@@ -694,50 +656,79 @@ class EyeLinkASCParser:
 
             # Inter-pupil distance (can indicate depth changes or vergence)
             if 'x_left' in samples_df.columns and 'x_right' in samples_df.columns:
+                # Vectorized calculation
                 samples_df['inter_pupil_distance'] = np.sqrt(
                     (samples_df['x_right'] - samples_df['x_left']) ** 2 +
                     (samples_df['y_right'] - samples_df['y_left']) ** 2
                 )
 
-                features['inter_pupil_distance_mean'] = samples_df['inter_pupil_distance'].mean()
-                features['inter_pupil_distance_std'] = samples_df['inter_pupil_distance'].std()
+                ipd_stats = samples_df['inter_pupil_distance'].agg(['mean', 'std'])
+                features['inter_pupil_distance_mean'] = ipd_stats['mean']
+                features['inter_pupil_distance_std'] = ipd_stats['std']
 
-        # Fixation features
+        # Fixation features - with more efficient calculations
         for eye in ['left', 'right']:
             if self.fixations[eye]:
                 fix_df = pd.DataFrame(self.fixations[eye])
                 if not fix_df.empty and 'duration' in fix_df.columns:
                     features[f'fixation_{eye}_count'] = len(fix_df)
-                    features[f'fixation_{eye}_duration_mean'] = fix_df['duration'].mean()
-                    features[f'fixation_{eye}_duration_std'] = fix_df['duration'].std()
-                    features[f'fixation_{eye}_rate'] = len(fix_df) / (
-                            max(self.sample_data[-1]['timestamp'] - self.sample_data[0]['timestamp'],
-                                1) / 1000) if self.sample_data else np.nan
 
-        # Saccade features
+                    # Calculate multiple statistics at once
+                    duration_stats = fix_df['duration'].agg(['mean', 'std'])
+                    features[f'fixation_{eye}_duration_mean'] = duration_stats['mean']
+                    features[f'fixation_{eye}_duration_std'] = duration_stats['std']
+
+                    # Calculate fixation rate
+                    if self.sample_data:
+                        # Calculate recording duration in seconds
+                        recording_duration = (self.sample_data[-1]['timestamp'] - self.sample_data[0][
+                            'timestamp']) / 1000
+                        if recording_duration > 0:
+                            features[f'fixation_{eye}_rate'] = len(fix_df) / recording_duration
+                        else:
+                            features[f'fixation_{eye}_rate'] = np.nan
+                    else:
+                        features[f'fixation_{eye}_rate'] = np.nan
+
+        # Saccade features - with more efficient calculations
         for eye in ['left', 'right']:
             if self.saccades[eye]:
                 sacc_df = pd.DataFrame(self.saccades[eye])
                 if not sacc_df.empty:
+                    features[f'saccade_{eye}_count'] = len(sacc_df)
+
+                    # Calculate amplitude statistics
                     if 'amplitude' in sacc_df.columns:
-                        features[f'saccade_{eye}_count'] = len(sacc_df)
-                        features[f'saccade_{eye}_amplitude_mean'] = sacc_df['amplitude'].mean()
-                        features[f'saccade_{eye}_amplitude_std'] = sacc_df['amplitude'].std()
+                        amp_stats = sacc_df['amplitude'].agg(['mean', 'std'])
+                        features[f'saccade_{eye}_amplitude_mean'] = amp_stats['mean']
+                        features[f'saccade_{eye}_amplitude_std'] = amp_stats['std']
+
+                    # Calculate duration and velocity
                     if 'duration' in sacc_df.columns:
                         features[f'saccade_{eye}_duration_mean'] = sacc_df['duration'].mean()
+
                     if 'peak_velocity' in sacc_df.columns:
                         features[f'saccade_{eye}_peak_velocity_mean'] = sacc_df['peak_velocity'].mean()
 
-        # Blink features
+        # Blink features - with more efficient calculations
         for eye in ['left', 'right']:
             if self.blinks[eye]:
                 blink_df = pd.DataFrame(self.blinks[eye])
                 if not blink_df.empty and 'duration' in blink_df.columns:
                     features[f'blink_{eye}_count'] = len(blink_df)
                     features[f'blink_{eye}_duration_mean'] = blink_df['duration'].mean()
-                    features[f'blink_{eye}_rate'] = len(blink_df) / (
-                            max(self.sample_data[-1]['timestamp'] - self.sample_data[0]['timestamp'],
-                                1) / 1000) if self.sample_data else np.nan
+
+                    # Calculate blink rate
+                    if self.sample_data:
+                        # Calculate recording duration in seconds
+                        recording_duration = (self.sample_data[-1]['timestamp'] - self.sample_data[0][
+                            'timestamp']) / 1000
+                        if recording_duration > 0:
+                            features[f'blink_{eye}_rate'] = len(blink_df) / recording_duration
+                        else:
+                            features[f'blink_{eye}_rate'] = np.nan
+                    else:
+                        features[f'blink_{eye}_rate'] = np.nan
 
         # Create a single-row DataFrame
         features_df = pd.DataFrame([features])
