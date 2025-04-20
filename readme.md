@@ -1,188 +1,195 @@
 # Eye Movement Analysis for Autism Classification
 
-A comprehensive toolkit for parsing, analyzing, and visualizing eye-tracking data to support autism research.
+A comprehensive toolkit for parsing, analyzing, and visualizing eye-tracking data to support autism research with movie-specific analysis capabilities.
 
 ## Overview
 
-This project provides a set of tools for processing eye movement data recorded using SR Research EyeLink systems. The toolkit is specifically designed to extract features and visualizations relevant to autism spectrum disorder (ASD) research, focusing on the characteristic differences in visual attention patterns between individuals with ASD and neurotypical controls.
+This project provides a specialized set of tools for processing eye movement data recorded using SR Research EyeLink systems. The toolkit is specifically designed for autism spectrum disorder (ASD) research, focusing on characterizing visual attention patterns during movie viewing. It enables researchers to compare gaze behavior between individuals with ASD and neurotypical controls across multiple movie stimuli.
 
-## Features
+## Key Features
 
-- Parses raw EyeLink ASC files into structured data
-- Extracts eye movement metrics, fixations, saccades, and blinks
-- Calculates head movement using corneal reflection data
-- Generates comprehensive visualizations of eye-tracking patterns
-- Extracts features for machine learning models
+- **Movie-Specific Analysis**: Processes and visualizes eye-tracking data separately for each movie stimulus
+- **Hierarchical Organization**: Maintains clear directory structure with movie-specific visualizations
+- **Comprehensive Data Extraction**: Parses raw EyeLink ASC files into structured data formats
+- **Rich Visualization Library**: Generates multiple visualization types revealing different aspects of visual attention
+- **ML Feature Extraction**: Computes standardized features for machine learning classification
 
+## Installation
 
-## Usage
+```bash
+git clone https://github.com/username/eye-movement-analysis.git
+cd eye-movement-analysis
+pip install -r requirements.txt
+```
+
+## Usage Guide
 
 ### Basic Usage
+
+Process a single ASC file with visualizations:
 
 ```bash
 python main.py --input path/to/file.asc --output results --visualize
 ```
 
-### Command Line Options
-
-```
---input, -i       Path to ASC file or directory containing ASC files
---output, -o      Output directory for parsed data and visualizations (default: 'output')
---visualize       Generate visualizations
---screen_width    Screen width in pixels (default: 1280)
---screen_height   Screen height in pixels (default: 1024)
---no_features     Skip feature extraction
-```
-
 ### Processing Multiple Files
+
+Process an entire directory of ASC files:
 
 ```bash
 python main.py --input path/to/directory/ --output results --visualize
 ```
 
-## Data Files Generated
+### Generate HTML Report
 
-The parser generates several CSV files containing various aspects of the eye-tracking data:
+Process files and create a comprehensive HTML report:
 
-### 1. Unified Eye Metrics CSV (`file_name_unified_eye_metrics.csv`)
+```bash
+python main.py --input path/to/directory/ --output results --visualize --report
+```
 
-This is the primary data file containing all eye-tracking metrics in a single integrated format:
+### Command Line Options
 
-- `timestamp`: Time of the sample in milliseconds
-- `x_left`, `y_left`: Left eye position coordinates
-- `pupil_left`: Left eye pupil size
-- `x_right`, `y_right`: Right eye position coordinates
-- `pupil_right`: Right eye pupil size
-- `input`: Input signal value
-- `cr_left`, `cr_right`: Corneal reflection positions
-- `head_movement_left_x`, `head_movement_right_x`: Head movement metrics
-- `head_movement_magnitude`: Overall head movement magnitude
-- `inter_pupil_distance`: Distance between pupils (depth/vergence)
-- `gaze_velocity_left`, `gaze_velocity_right`: Gaze velocity in pixels/second
-- `is_fixation_left/right`: Boolean flag indicating a fixation
-- `is_saccade_left/right`: Boolean flag indicating a saccade
-- `is_blink_left/right`: Boolean flag indicating a blink
+```
+--input, -i         Path to ASC file or directory containing ASC files
+--output, -o        Output directory for parsed data and visualizations (default: 'output')
+--visualize         Generate visualizations for each movie
+--report            Generate comprehensive HTML visualization report
+--screen_width      Screen width in pixels (default: 1280)
+--screen_height     Screen height in pixels (default: 1024)
+--no_features       Skip feature extraction
+--unified_only      Only save unified eye metrics CSV files
+```
 
-### 2. Features CSV (`file_name_features.csv`)
+## Directory Structure
 
-Contains aggregated features relevant for machine learning classification:
+The toolkit generates a structured output directory:
 
-- `participant_id`: Identifier for the participant
-- **Pupil Metrics**: `pupil_left/right_mean`, `pupil_left/right_std`, `pupil_left/right_min`, `pupil_left/right_max`
-- **Gaze Variability**: `gaze_left/right_x_std`, `gaze_left/right_y_std`, `gaze_left/right_dispersion`
-- **Head Movement**: `head_movement_mean`, `head_movement_std`, `head_movement_max`, `head_movement_frequency`
-- **Fixation Metrics**: `fixation_left/right_count`, `fixation_left/right_duration_mean`, `fixation_left/right_duration_std`, `fixation_left/right_rate`
-- **Saccade Metrics**: `saccade_left/right_count`, `saccade_left/right_amplitude_mean`, `saccade_left/right_amplitude_std`, `saccade_left/right_duration_mean`, `saccade_left/right_peak_velocity_mean`
-- **Blink Metrics**: `blink_left/right_count`, `blink_left/right_duration_mean`, `blink_left/right_rate`
-
-### 3. Combined Files
-
-When processing multiple participants, the system generates:
-
-- `all_participants_unified_metrics.csv`: Combined eye metrics from all participants
-- `combined_features.csv`: Features from all participants for ML analysis
-- `feature_summary.csv`: Statistical summary of features
+```
+results/
+├── timestamp/                      # Timestamped results folder
+│   ├── data/                       # Data output
+│   │   ├── Movie1Name/             # Movie-specific folder
+│   │   │   ├── plots/              # Visualizations for Movie1
+│   │   │   └── *_unified_eye_metrics.csv  # Eye metrics for Movie1
+│   │   ├── Movie2Name/             # Movie-specific folder
+│   │   │   ├── plots/              # Visualizations for Movie2
+│   │   │   └── *_unified_eye_metrics.csv  # Eye metrics for Movie2
+│   │   └── general/                # General data across all movies
+│   │       ├── *_fixations_left.csv
+│   │       ├── *_fixations_right.csv
+│   │       ├── *_saccades_left.csv
+│   │       └── ... (other CSV files)
+│   ├── plots/                      # General visualization folder
+│   │   └── report/                 # HTML report folder (if --report used)
+│   │       ├── visualization_report.html
+│   │       └── ... (report resources)
+│   └── features/                   # Extracted features for ML
+│       ├── *_features.csv          # Individual features
+│       └── combined_features.csv   # Combined features (for multiple files)
+```
 
 ## Visualizations
 
-The toolkit generates a variety of visualizations to help researchers understand eye movement patterns:
+The toolkit generates multiple visualization types for each movie:
 
-### 1. Scanpath Plot
+### 1. Eye Movement Visualizations
 
- Shows the trajectory of eye movements over time, with markers for fixations.
+- **Heatmaps**: Show gaze density across the screen for each eye
+- **Scanpaths**: Display the trajectory of eye movements with fixation markers
+- **Fixation-Saccade Distribution**: Visualize fixations and connecting saccades
 
-**Interpretation**: 
-- Typical development: More systematic, predictable scanning patterns
-- ASD: Often shows more variable and idiosyncratic scanning, with less focus on socially relevant areas
+### 2. Temporal Visualizations
 
-### 2. Heatmap
+- **Pupil Size Timeseries**: Track pupil size changes throughout the movie
+- **Pupil Size and Eye Events**: Show relationship between pupil size and different eye events
 
+### 3. Statistical Distributions
 
- Color-coded visualization of gaze density, with warmer colors indicating areas that received more visual attention.
+- **Fixation Duration Distribution**: Histogram of fixation durations for both eyes
+- **Saccade Amplitude Distribution**: Histogram of saccade amplitudes in visual degrees
 
-**Interpretation**:
-- Typical development: Hotspots usually centered on socially relevant features (faces, eyes)
-- ASD: May show more diffuse attention or focus on non-social elements
+### 4. Social Attention Analysis
 
-### 3. Fixation Duration Distribution
+- **Social vs. Non-social Attention**: Pie chart showing allocation of attention (note: requires manual AOI data)
+- **Social Attention Timeline**: Shows changes in social attention over the course of the movie
 
+## Working with Social Attention Analysis
 
- Histogram showing the distribution of fixation durations.
+The Social Attention Analysis visualization requires manually defined Areas of Interest (AOIs):
 
-**Interpretation**:
-- Typical development: Moderately distributed fixation durations
-- ASD: May show either unusually brief fixations (suggesting difficulty maintaining attention) or unusually long fixations (suggesting perseveration)
+1. **Default Behavior**: Without AOI data, the visualizer creates simulated AOIs for demonstration purposes
+2. **For Research Use**: You should provide real AOI data in the following format:
 
-### 4. Saccade Amplitude Distribution
+```python
+# Format for ROI data: Dict mapping frame numbers to lists of ROIs
+roi_data = {
+    1: [(x1, y1, width1, height1, 'face'), (x2, y2, width2, height2, 'eyes')],
+    2: [(x1, y1, width1, height1, 'face'), (x2, y2, width2, height2, 'eyes')],
+    # ... more frames
+}
 
+# Then pass to the visualization function:
+visualizer.plot_social_attention_analysis(data, plots_dir, prefix, roi_data=roi_data)
+```
 
- Histogram showing the distribution of saccade amplitudes (distance between fixations).
+## Data Files Generated
 
-**Interpretation**:
-- Typical development: Wide range of saccade amplitudes, with peaks corresponding to typical reading or scene viewing
-- ASD: May show unusual patterns with either very small saccades (local focus) or very large saccades (jumping between distant points)
+### 1. Unified Eye Metrics CSV
 
-### 5. Pupil Size Timeseries
+Primary data file containing integrated eye-tracking metrics:
+- Eye positions, pupil sizes, velocity measures
+- Event flags (fixations, saccades, blinks)
+- Frame information
 
+### 2. Features CSV
 
- Graph showing pupil size changes over time.
-
-**Interpretation**:
-- Reflects cognitive load and emotional arousal
-- ASD: May show atypical pupillary responses to social stimuli
-
-### 6. Head Movement
-
-
- Visualization of head movement magnitude over time.
-
-**Interpretation**:
-- Typical development: Moderate head movements, often correlated with attention shifts
-- ASD: May show increased head movements or different patterns of movement
-
-### 7. Velocity Profile
-
-
- Graph showing eye movement velocity over time, with markers for saccades.
-
-**Interpretation**:
-- Shows the dynamics of eye movements
-- ASD: May show different velocity profiles, potentially reflecting different neural control of eye movements
-
-### 8. Fixation Density Comparison
-
-
-
- Compares the spatial distribution of fixations between left and right eyes.
-
-**Interpretation**:
-- Typical development: High correlation between eyes
-- ASD: May show more asymmetry between eyes
-
-### 9. Fixation-Saccade Distribution
-
-
- Spatial visualization showing fixations and the saccades connecting them.
-
-**Interpretation**:
-- Shows the complete spatial pattern of visual exploration
-- ASD: May show unusual patterns of exploration compared to typical development
+Aggregated features relevant for machine learning:
+- Pupil metrics (mean, std, min, max)
+- Gaze variability measures
+- Fixation, saccade, and blink statistics
+- Head movement metrics
 
 ## Research Applications
 
-This toolkit is designed to support several key areas of autism research:
+This toolkit supports several key areas of autism research:
 
-1. **Classification**: Identifying potential biomarkers for ASD through machine learning on eye movement features
-2. **Severity Assessment**: Quantifying the relationship between eye movement patterns and autism symptom severity
-3. **Subtype Identification**: Uncovering potential subtypes within the autism spectrum based on different gaze patterns
-4. **Early Detection**: Supporting research into early indicators of ASD through eye tracking
+1. **Visual Attention in Movie Viewing**: Compare scanning patterns between ASD and control groups during socially relevant movie stimuli
+2. **Biomarker Identification**: Extract consistent eye movement features that correlate with ASD diagnosis
+3. **Severity Assessment**: Quantify relationships between eye movement patterns and symptom severity
+4. **Longitudinal Analysis**: Track changes in visual attention over time or across interventions
+5. **Machine Learning Integration**: Use extracted features for classification or regression models
+
+## Advanced Usage Examples
+
+### Extract Features Only
+
+```bash
+python main.py --input path/to/directory/ --output results --no_visualize
+```
+
+### Process Files and Generate Report
+
+```bash
+python main.py --input path/to/directory/ --output results --visualize --report
+```
 
 ## Technical Notes
 
-- The parser is optimized for EyeLink 1000+ data but should work with other EyeLink systems
-- Head movement is calculated using the corneal reflection method, which requires that the EyeLink system was configured to track CR
-- Feature extraction is designed to capture metrics relevant to autism research but can be extended for other applications
+- The parser is optimized for EyeLink 1000+ data but works with other EyeLink systems
+- For accurate head movement calculation, the EyeLink must be configured to track corneal reflection
+- Memory usage scales with file size; very large ASC files may require more RAM
+- When visualizing frame data, each movie is processed separately to maintain context
 
+## Troubleshooting
+
+- **NaN Values in Visualizations**: Some plots may fail with NaN values; this typically indicates missing data in the ASC file
+- **Missing Frames**: If frame information is absent, certain plots may not display frame markers
+- **Social Attention Analysis**: Without manually defined AOIs, this plot uses simulated regions and should be interpreted accordingly
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
