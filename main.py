@@ -1,11 +1,12 @@
 """
 Main script for Eye Movement Analysis for Autism Classification
 Author: Tal Alfi
-Date: March 2025
+Date: April 2025
 """
 
 import os
 import argparse
+import time
 from typing import List, Tuple
 import glob
 from datetime import datetime
@@ -13,7 +14,7 @@ import matplotlib.pyplot as plt
 
 # Import our modules
 from parser import process_asc_file, process_multiple_files
-from eyelink_visualizer import generate_visualizations, generate_multiple_visualizations
+from eyelink_visualizer import MovieEyeTrackingVisualizer
 
 
 def parse_args():
@@ -31,6 +32,7 @@ def parse_args():
     parser.add_argument('--unified_only', action='store_true', help='Only save unified eye metrics CSV')
     parser.add_argument('--visualize', action='store_true', help='Generate visualizations')
     parser.add_argument('--no_features', action='store_false', dest='extract_features', help='Skip feature extraction')
+    parser.add_argument('--report', action='store_true', help='Generate HTML visualization report')
 
     return parser.parse_args()
 
@@ -63,6 +65,7 @@ def create_output_dirs(base_output_dir: str) -> Tuple[str, str, str]:
 
 def main():
     """Main execution function."""
+    start_time = time.time()
     args = parse_args()
 
     # Find input files
@@ -105,9 +108,11 @@ def main():
             feature_summary.to_csv(summary_path)
             print(f"Feature summary statistics saved to {summary_path}")
 
-            # Maybe generate a correlation heatmap of features
+            # Generate a correlation heatmap of features
             plt.figure(figsize=(12, 10))
             corr_matrix = combined_features.select_dtypes(include=['number']).corr()
+            plt.imshow(corr_matrix, cmap='coolwarm', vmin=-1, vmax=1)
+            plt.colorbar()
             plt.title("Feature Correlation Matrix")
             plt.tight_layout()
             corr_path = os.path.join(feature_dir, 'feature_correlations.png')
@@ -136,27 +141,39 @@ def main():
             result['features'].to_csv(features_path, index=False)
             print(f"\nFeatures saved to {features_path}")
 
-        # Generate visualizations if requested
-        if args.visualize:
-            print("\nGenerating visualizations...")
-            try:
-                # Set the participant ID in the dataframes
-                if 'unified_eye_metrics' in result['dataframes']:
-                    # Get the base filename for participant ID
-                    participant_id = os.path.splitext(os.path.basename(asc_files[0]))[0]
-                    # Add participant ID to the dataframes dictionary
-                    result['dataframes']['participant_id'] = participant_id
+    # Generate visualizations if requested
+    if args.visualize:
+        print("\nGenerating visualizations...")
+        try:
+            # Get the base filename for participant ID
+            participant_id = os.path.splitext(os.path.basename(asc_files[0]))[0]
 
-                output_dir = generate_visualizations(
-                    result['dataframes'],
-                    output_dir=viz_dir,
-                    screen_size=(args.screen_width, args.screen_height)
-                )
-                print(f"Visualizations saved to {output_dir}")
-            except Exception as e:
-                print(f"Error generating visualizations: {e}")
-                import traceback
-                traceback.print_exc()  # Print the full traceback for debugging
+            # Initialize the movie visualizer
+            visualizer = MovieEyeTrackingVisualizer(
+                base_dir=data_dir,
+                screen_size=(args.screen_width, args.screen_height)
+            )
+
+            # Process all movies
+            visualization_results = visualizer.process_all_movies(participant_id)
+
+            # Generate HTML report if requested
+            if args.report and visualization_results:
+                report_dir = os.path.join(viz_dir, 'report')
+                report_path = visualizer.generate_report(visualization_results, report_dir)
+                print(f"Visualization report generated at: {report_path}")
+
+        except Exception as e:
+            print(f"Error generating visualizations: {e}")
+            import traceback
+            traceback.print_exc()  # Print the full traceback for debugging
+
+    # Print execution time
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"\nExecution time: {execution_time:.2f} seconds")
+
+    return 0
 
 
 if __name__ == "__main__":
