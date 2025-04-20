@@ -157,14 +157,25 @@ class EyeLinkASCParser:
         # close it as a safeguard
         if current_movie is not None and movie_start_time is not None:
             # Use the last timestamp as the end time
-            end_time = int(self.file_lines[-1].split()[0]) if self.file_lines else None
+            # Find the last line with a numeric timestamp
+            end_time = None
+            for line in reversed(self.file_lines):
+                parts = line.strip().split()
+                if parts and parts[0].isdigit():
+                    try:
+                        end_time = int(parts[0])
+                        break
+                    except ValueError:
+                        continue
 
-            self.movie_segments.append({
-                'movie_name': current_movie,
-                'start_time': movie_start_time,
-                'end_time': end_time,
-                'frames': movie_frames.get(current_movie, {})
-            })
+            if end_time is not None:
+                self.movie_segments.append({
+                    'movie_name': current_movie,
+                    'start_time': movie_start_time,
+                    'end_time': end_time,
+                    'frames': movie_frames.get(current_movie, {}),
+                    'frame_count': len(movie_frames.get(current_movie, {}))
+                })
 
         return self.messages
 
