@@ -85,7 +85,10 @@ class EyeLinkASCParser:
         current_movie = None
         movie_start_time = None
         movie_frames = {}  # To track frames for each movie
+        default_movie_name = "unknown_movie"  # Default name when no movie name is found
+        has_frame_markers = False
 
+        # First pass - collect all messages and frame markers
         for line in self.file_lines:
             if line.startswith('MSG'):
                 match = self.msg_pattern.match(line)
@@ -93,41 +96,16 @@ class EyeLinkASCParser:
                     timestamp, content = match.groups()
                     timestamp = int(timestamp)
 
-                    # Check for movie file markers at start
-                    movie_start_match = self.movie_start_pattern.search(content)
-                    if movie_start_match:
-                        movie_name = movie_start_match.group(1)
-
-                        # Start tracking new movie
-                        current_movie = movie_name
-                        movie_start_time = timestamp
-                        # Initialize frame tracking for this movie if needed
-                        if current_movie not in movie_frames:
-                            movie_frames[current_movie] = {}
-
-                    # Check for movie file markers at end
-                    movie_end_match = self.movie_end_pattern.search(content)
-                    if movie_end_match:
-                        movie_name = movie_end_match.group(1)
-                        frame_count = int(movie_end_match.group(2))
-
-                        # If this is the current movie, close the segment
-                        if current_movie == movie_name and movie_start_time is not None:
-                            self.movie_segments.append({
-                                'movie_name': current_movie,
-                                'start_time': movie_start_time,
-                                'end_time': timestamp,
-                                'frames': movie_frames.get(current_movie, {}),
-                                'frame_count': frame_count
-                            })
-
-                            # Reset tracking
-                            current_movie = None
-                            movie_start_time = None
+                    # Store general message
+                    self.messages.append({
+                        'timestamp': timestamp,
+                        'content': content
+                    })
 
                     # Track frame markers
                     frame_match = self.frame_pattern.search(content)
                     if frame_match:
+                        has_frame_markers = True
                         frame_num = int(frame_match.group(1))
 
                         # Create frame marker
@@ -135,47 +113,227 @@ class EyeLinkASCParser:
                             'timestamp': timestamp,
                             'frame': frame_num,
                             'content': content,
-                            'movie_name': current_movie  # Associate frame with current movie
+                            'movie_name': None  # We'll fill this in later
                         }
 
                         # Add to general frame markers list
                         self.frame_markers.append(frame_marker)
 
-                        # Also track in the movie-specific frames dictionary
-                        if current_movie is not None:
-                            if current_movie not in movie_frames:
-                                movie_frames[current_movie] = {}
-                            movie_frames[current_movie][frame_num] = timestamp
+        # Second pass - identify movie segments
+        # First look for explicit "Movie File Name" markers
+        potential_movies = []
+        start_markers = []
+        end_markers = []
 
-                    # Store general message
-                    self.messages.append({
-                        'timestamp': timestamp,
-                        'content': content
+        for msg in self.messages:
+            content = msg['content']
+            timestamp = msg['timestamp']
+
+            # Check for movie file markers at start
+            movie_start_match = self.movie_start_pattern.search(content)
+            if movie_start_match:
+                movie_name = movie_start_match.group(1)
+                start_markers.append({
+                    'name': movie_name,
+                    'timestamp': timestamp
+                })
+
+            # Check for movie file markers at end (with frame count)
+            movie_end_match = self.movie_end_pattern.search(content)
+            if movie_end_match:
+                movie_name = movie_end_match.group(1)
+                frame_count = int(movie_end_match.group(2))
+                end_markers.append({
+                    'name': movie_name,
+                    'timestamp': timestamp,
+                    'frame_count': frame_count
+                })
+
+        # Match start and end markers to create movie segments
+        for start in start_markers:
+            # Find matching end marker
+            matching_end = None
+            for end in end_markers:
+                if end['name'] == start['name']:
+                    matching_end = end
+                    break
+
+            if matching_end:
+                # Create a movie segment
+                movie_name = start['name']
+                start_time = start['timestamp']
+                end_time = matching_end['timestamp']
+                frame_count = matching_end.get('frame_count', 0)
+
+                # Collect all frame markers that fall between these timestamps
+                frames = {}
+                for frame in self.frame_markers:
+                    if start_time <= frame['timestamp'] <= end_time:
+                        frames[frame['frame']] = frame['timestamp']
+                        frame['movie_name'] = movie_name  # Update movie name in frame marker
+
+                self.movie_segments.append({
+                    'movie_name': movie_name,
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'frames': frames,
+                    'frame_count': frame_count or len(frames)
+                })
+
+                potential_movies.append({
+                    'movie_name': movie_name,
+                    'start_time': start_time,
+                    'end_time': end_time
+                })
+
+        # Handle case where we have end markers but no start markers
+        for end in end_markers:
+            # Check if this end marker has already been matched
+            already_matched = False
+            for movie in potential_movies:
+                if movie['movie_name'] == end['name'] and movie['end_time'] == end['timestamp']:
+                    already_matched = True
+                    break
+
+            if not already_matched:
+                # This is an end marker without a start marker
+                movie_name = end['name']
+                end_time = end['timestamp']
+                frame_count = end.get('frame_count', 0)
+
+                # Try to find the start time based on frame markers
+                # Look for the earliest frame that has not been assigned to any movie
+                earliest_frame = None
+                for frame in sorted(self.frame_markers, key=lambda x: x['timestamp']):
+                    if frame['movie_name'] is None:  # Not yet assigned to a movie
+                        earliest_frame = frame
+                        break
+
+                if earliest_frame:
+                    start_time = earliest_frame['timestamp']
+
+                    # Collect all frame markers that fall between these timestamps
+                    frames = {}
+                    for frame in self.frame_markers:
+                        if start_time <= frame['timestamp'] <= end_time and frame['movie_name'] is None:
+                            frames[frame['frame']] = frame['timestamp']
+                            frame['movie_name'] = movie_name  # Update movie name in frame marker
+
+                    self.movie_segments.append({
+                        'movie_name': movie_name,
+                        'start_time': start_time,
+                        'end_time': end_time,
+                        'frames': frames,
+                        'frame_count': frame_count or len(frames)
                     })
 
-        # If there's a movie still open (though there shouldn't be based on the file format),
-        # close it as a safeguard
-        if current_movie is not None and movie_start_time is not None:
-            # Use the last timestamp as the end time
-            # Find the last line with a numeric timestamp
-            end_time = None
-            for line in reversed(self.file_lines):
-                parts = line.strip().split()
-                if parts and parts[0].isdigit():
-                    try:
-                        end_time = int(parts[0])
-                        break
-                    except ValueError:
-                        continue
+                    potential_movies.append({
+                        'movie_name': movie_name,
+                        'start_time': start_time,
+                        'end_time': end_time
+                    })
 
-            if end_time is not None:
-                self.movie_segments.append({
-                    'movie_name': current_movie,
-                    'start_time': movie_start_time,
-                    'end_time': end_time,
-                    'frames': movie_frames.get(current_movie, {}),
-                    'frame_count': len(movie_frames.get(current_movie, {}))
-                })
+        # If we still have no movie segments but have frame markers, create segments
+        # based on frame number continuity
+        if not self.movie_segments and has_frame_markers:
+            # Sort frames by timestamp
+            sorted_frames = sorted(self.frame_markers, key=lambda x: x['timestamp'])
+
+            # Group frames into segments based on frame number continuity
+            segments = []
+            current_segment = []
+
+            for i, frame in enumerate(sorted_frames):
+                if not current_segment or (frame['frame'] == current_segment[-1]['frame'] + 1 or
+                                           (frame['frame'] == 1 and len(current_segment) > 0)):
+                    # Continue current segment or start new one if frame is 1
+                    if frame['frame'] == 1 and len(current_segment) > 0:
+                        # Start of a new segment
+                        segments.append(current_segment)
+                        current_segment = [frame]
+                    else:
+                        # Continue current segment
+                        current_segment.append(frame)
+                else:
+                    # Non-consecutive frame, start a new segment
+                    if current_segment:
+                        segments.append(current_segment)
+                    current_segment = [frame]
+
+            # Add the last segment if it exists
+            if current_segment:
+                segments.append(current_segment)
+
+            # Create movie segments from frame groupings
+            for i, segment in enumerate(segments):
+                if segment:
+                    # Check if any end_markers align with the end of this segment
+                    movie_name = None
+                    frame_count = None
+
+                    # Find the closest end marker after the last frame in this segment
+                    last_frame_time = segment[-1]['timestamp']
+                    closest_end = None
+                    for end in end_markers:
+                        if end['timestamp'] >= last_frame_time:
+                            if closest_end is None or end['timestamp'] < closest_end['timestamp']:
+                                closest_end = end
+
+                    if closest_end and closest_end['timestamp'] - last_frame_time < 1000:  # Within 1 second
+                        movie_name = closest_end['name']
+                        frame_count = closest_end.get('frame_count', len(segment))
+
+                    # Use default name if we didn't find a matching end marker
+                    if movie_name is None:
+                        movie_name = f"{default_movie_name}_{i + 1}"
+                        frame_count = len(segment)
+
+                    start_time = segment[0]['timestamp']
+                    end_time = segment[-1]['timestamp']
+
+                    # Create frame mapping
+                    segment_frames = {frame['frame']: frame['timestamp'] for frame in segment}
+
+                    # Update movie name in frame markers
+                    for frame in segment:
+                        frame['movie_name'] = movie_name
+
+                    self.movie_segments.append({
+                        'movie_name': movie_name,
+                        'start_time': start_time,
+                        'end_time': end_time,
+                        'frames': segment_frames,
+                        'frame_count': frame_count
+                    })
+
+        # If we still have no movie segments but have samples, create a single segment for all data
+        if not self.movie_segments and self.sample_data:
+            # Find first and last timestamps
+            first_timestamp = self.sample_data[0]['timestamp']
+            last_timestamp = self.sample_data[-1]['timestamp']
+
+            # Check if we have any end markers
+            if end_markers:
+                movie_name = end_markers[0]['name']
+                frame_count = end_markers[0].get('frame_count', 1)
+            else:
+                movie_name = default_movie_name
+                frame_count = 1
+
+            # Create a segment for the entire recording
+            self.movie_segments.append({
+                'movie_name': movie_name,
+                'start_time': first_timestamp,
+                'end_time': last_timestamp,
+                'frames': {1: first_timestamp},  # Create at least one fake frame
+                'frame_count': frame_count
+            })
+
+        # Debug info
+        print(f"Identified {len(self.movie_segments)} movie segments:")
+        for i, segment in enumerate(self.movie_segments):
+            print(f"  {i + 1}. {segment['movie_name']}: {segment['frame_count']} frames, "
+                  f"{(segment['end_time'] - segment['start_time']) / 1000:.2f} seconds")
 
         return self.messages
 
@@ -479,6 +637,7 @@ class EyeLinkASCParser:
         unified_df['movie_name'] = None
         unified_df['frame_number'] = None
 
+        # Process each movie segment separately
         if hasattr(self, 'movie_segments') and self.movie_segments:
             for segment in self.movie_segments:
                 movie_name = segment['movie_name']
@@ -486,24 +645,33 @@ class EyeLinkASCParser:
                 end_time = segment['end_time']
                 frames = segment.get('frames', {})
 
+                # Assign movie name to all samples within this segment
                 movie_mask = (unified_df['timestamp'] >= start_time) & (unified_df['timestamp'] <= end_time)
                 unified_df.loc[movie_mask, 'movie_name'] = movie_name
 
-                frame_timestamps = sorted(frames.items(), key=lambda x: x[1])
-                for i in range(len(frame_timestamps) - 1):
-                    current_frame, current_ts = frame_timestamps[i]
-                    next_ts = frame_timestamps[i + 1][1]
-                    frame_mask = (unified_df['timestamp'] >= current_ts) & (unified_df['timestamp'] < next_ts)
-                    unified_df.loc[frame_mask, 'frame_number'] = current_frame
+                # Sort frames by timestamp for proper assignment
+                if frames:
+                    frame_timestamps = sorted(frames.items(), key=lambda x: x[1])
 
-                if frame_timestamps:
-                    last_frame, last_ts = frame_timestamps[-1]
-                    last_mask = (unified_df['timestamp'] >= last_ts) & (unified_df['timestamp'] <= end_time)
-                    unified_df.loc[last_mask, 'frame_number'] = last_frame
+                    # If we only have one frame, assign it to all samples in this segment
+                    if len(frame_timestamps) == 1:
+                        unified_df.loc[movie_mask, 'frame_number'] = frame_timestamps[0][0]
+                    else:
+                        # Assign frames based on timestamp ranges
+                        for i in range(len(frame_timestamps) - 1):
+                            current_frame, current_ts = frame_timestamps[i]
+                            next_ts = frame_timestamps[i + 1][1]
+                            frame_mask = (unified_df['timestamp'] >= current_ts) & (unified_df['timestamp'] < next_ts)
+                            unified_df.loc[frame_mask, 'frame_number'] = current_frame
+
+                        # Handle the last frame
+                        last_frame, last_ts = frame_timestamps[-1]
+                        last_mask = (unified_df['timestamp'] >= last_ts) & (unified_df['timestamp'] <= end_time)
+                        unified_df.loc[last_mask, 'frame_number'] = last_frame
 
         # Reorder columns
         desired_order = [
-            'timestamp', 'frame_number', 'x_left', 'y_left', 'pupil_left',
+            'timestamp', 'movie_name', 'frame_number', 'x_left', 'y_left', 'pupil_left',
             'x_right', 'y_right', 'pupil_right', 'input', 'cr_info',
             'cr_left', 'cr_right', 'head_movement_left_x', 'head_movement_right_x',
             'head_movement_magnitude', 'inter_pupil_distance',
@@ -519,10 +687,15 @@ class EyeLinkASCParser:
 
         return unified_df
 
-
     def save_to_csv(self, output_dir: str = None):
         """
         Save all DataFrames to CSV files, with separate folders for each movie.
+
+        Args:
+            output_dir: Directory to save the files
+
+        Returns:
+            List of saved file paths
         """
         if output_dir is None:
             # Use same directory as the ASC file
@@ -543,40 +716,50 @@ class EyeLinkASCParser:
         saved_files = []
 
         # Handle unified eye metrics specially - separate by movie
-        if 'unified_eye_metrics' in dfs and hasattr(self, 'movie_segments') and self.movie_segments:
+        if 'unified_eye_metrics' in dfs:
             unified_df = dfs['unified_eye_metrics']
 
-            for movie_segment in self.movie_segments:
-                movie_name = movie_segment['movie_name']
-                start_time = movie_segment['start_time']
-                end_time = movie_segment['end_time']
+            # If we have movie segments, split by movie
+            if hasattr(self, 'movie_segments') and self.movie_segments:
+                for movie_segment in self.movie_segments:
+                    movie_name = movie_segment['movie_name']
+                    start_time = movie_segment['start_time']
+                    end_time = movie_segment['end_time']
 
-                # Clean movie name for folder and filename
-                clean_movie_name = re.sub(r'[^\w\d-]', '_', os.path.splitext(movie_name)[0])
+                    # Clean movie name for folder and filename
+                    clean_movie_name = re.sub(r'[^\w\d-]', '_',
+                                              os.path.splitext(movie_name)[0] if '.' in movie_name else movie_name)
 
-                # Create movie directory at the top level
-                movie_dir = os.path.join(output_dir, clean_movie_name)
-                os.makedirs(movie_dir, exist_ok=True)
+                    # Create movie directory at the top level
+                    movie_dir = os.path.join(output_dir, clean_movie_name)
+                    os.makedirs(movie_dir, exist_ok=True)
 
-                # Create plots directory inside movie directory
-                plots_dir = os.path.join(movie_dir, "plots")
-                os.makedirs(plots_dir, exist_ok=True)
+                    # Create plots directory inside movie directory
+                    plots_dir = os.path.join(movie_dir, "plots")
+                    os.makedirs(plots_dir, exist_ok=True)
 
-                # Filter data for this movie segment
-                movie_mask = (unified_df['timestamp'] >= start_time) & (unified_df['timestamp'] <= end_time)
-                movie_data = unified_df[movie_mask].copy()
+                    # Filter data for this movie segment
+                    movie_mask = (unified_df['timestamp'] >= start_time) & (unified_df['timestamp'] <= end_time)
+                    movie_data = unified_df[movie_mask].copy()
 
-                # We can drop the movie_name column since it's redundant with the folder
-                if 'movie_name' in movie_data.columns:
-                    movie_data = movie_data.drop(columns=['movie_name'])
+                    # We can drop the movie_name column since it's redundant with the folder
+                    if 'movie_name' in movie_data.columns:
+                        movie_data = movie_data.drop(columns=['movie_name'])
 
-                if not movie_data.empty:
-                    # Save to movie-specific file
-                    movie_file_path = os.path.join(movie_dir,
-                                                   f"{participant_id}_unified_eye_metrics_{clean_movie_name}.csv")
-                    movie_data.to_csv(movie_file_path, index=False)
-                    saved_files.append(movie_file_path)
-                    print(f"Saved unified eye metrics for movie {clean_movie_name} to {movie_file_path}")
+                    if not movie_data.empty:
+                        # Save to movie-specific file
+                        movie_file_path = os.path.join(movie_dir,
+                                                       f"{participant_id}_unified_eye_metrics_{clean_movie_name}.csv")
+                        movie_data.to_csv(movie_file_path, index=False)
+                        saved_files.append(movie_file_path)
+                        print(f"Saved unified eye metrics for movie {clean_movie_name} to {movie_file_path}")
+            else:
+                # No movie segments - save the whole unified dataframe
+                print("Warning: No movie segments found. Creating a single unified metrics file.")
+                output_path = os.path.join(output_dir, f"{participant_id}_unified_eye_metrics.csv")
+                unified_df.to_csv(output_path, index=False)
+                saved_files.append(output_path)
+                print(f"Saved unified eye metrics to {output_path}")
 
         # Save other DataFrames to the general directory
         for df_name, df in dfs.items():
