@@ -3,12 +3,18 @@ import os
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QFileDialog,
                              QComboBox, QCheckBox, QTabWidget, QSplitter,
-                             QProgressBar, QMessageBox)
+                             QProgressBar, QMessageBox, QTableWidget,
+                             QTableWidgetItem, QHeaderView, QGroupBox,
+                             QTextBrowser, QToolTip, QScrollArea, QSizePolicy)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QFont, QCursor, QPalette
 import datetime
+import pandas as pd
 from parser import process_asc_file, process_multiple_files
 from eyelink_visualizer import MovieEyeTrackingVisualizer
+# Import documentation module
+from documentation import (get_feature_explanations, get_visualization_explanations,
+                           get_formatted_feature_documentation, get_formatted_visualization_documentation)
 
 
 class ProcessingThread(QThread):
@@ -102,14 +108,119 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.output_dir = None
         self.visualization_results = {}
         self.movie_visualizations = {}
+        self.features_data = None
+
+        # Get feature and visualization explanations from the documentation module
+        self.feature_explanations = get_feature_explanations()
+        self.visualization_explanations = get_visualization_explanations()
+
+        # Check if dark mode is enabled
+        self.is_dark_mode = self.is_dark_theme()
+
+        # Install event filter to detect theme changes
+        app = QApplication.instance()
+        app.installEventFilter(self)
 
         # Initialize UI
         self.init_ui()
+
+    def eventFilter(self, obj, event):
+        """Event filter to detect system theme changes"""
+        if obj == QApplication.instance() and event.type() == event.ApplicationPaletteChange:
+            # Theme has changed - update dark mode status
+            new_dark_mode = self.is_dark_theme()
+            if new_dark_mode != self.is_dark_mode:
+                self.is_dark_mode = new_dark_mode
+                self.refresh_theme()
+        return super().eventFilter(obj, event)
+
+    def refresh_theme(self):
+        """Refresh UI with current theme"""
+        # Update the stylesheet
+        self.centralWidget().setStyleSheet(self.get_theme_style())
+
+        # Refresh feature tables
+        for category_name, table_info in self.feature_tables.items():
+            table = table_info["table"]
+            if not self.is_dark_mode:
+                table.setStyleSheet("QTableWidget { background-color: white; border: 1px solid #ddd; }")
+            else:
+                table.setStyleSheet("")  # Default dark mode styling from main style
+
+        # Refresh visualization explanation text area
+        if not self.is_dark_mode:
+            self.viz_explanation.setStyleSheet("background-color: #f8f8f8; border: 1px solid #e0e0e0;")
+        else:
+            self.viz_explanation.setStyleSheet("")  # Default dark mode styling
+
+        # Re-display current visualization if any
+        if hasattr(self, 'image_label') and self.image_label.pixmap() is not None:
+            self.show_visualization()
+
+    def is_dark_theme(self):
+        """Detect if dark theme is active by checking background color"""
+        app = QApplication.instance()
+        palette = app.palette()
+        background_color = palette.color(QPalette.Window)
+        # If the background color is dark, assume dark theme
+        return background_color.lightness() < 128
+
+    def get_theme_style(self):
+        """Get style sheet based on current theme"""
+        if self.is_dark_mode:
+            return """
+            QGroupBox { 
+                font-weight: bold; 
+                font-size: 14px;
+                color: #f0f0f0;
+            }
+            QTableWidget { 
+                gridline-color: #555;
+                background-color: rgba(60, 60, 60, 120);
+                border: 1px solid #555;
+            }
+            QTableWidget::item {
+                color: #f0f0f0;
+            }
+            QHeaderView::section {
+                background-color: #444;
+                color: #f0f0f0;
+                border: 1px solid #555;
+            }
+            QTextBrowser {
+                background-color: rgba(60, 60, 60, 120);
+                border: 1px solid #555;
+            }
+            """
+        else:
+            return """
+            QGroupBox { 
+                font-weight: bold; 
+                font-size: 14px; 
+            }
+            QTableWidget { 
+                gridline-color: #ccc;
+                background-color: white;
+            }
+            QTableWidget::item {
+                background-color: white;
+            }
+            QHeaderView::section {
+                background-color: #f0f0f0;
+                border: 1px solid #ddd;
+            }
+            QTextBrowser {
+                background-color: white;
+            }
+            """
 
     def init_ui(self):
         # Create central widget and layout
         central_widget = QWidget()
         main_layout = QVBoxLayout(central_widget)
+
+        # Apply theme-specific styles
+        central_widget.setStyleSheet(self.get_theme_style())
 
         # Create tabs for different sections
         tabs = QTabWidget()
@@ -214,12 +325,21 @@ class EyeMovementAnalysisGUI(QMainWindow):
         movie_layout.addLayout(viz_type_layout)
         viz_layout.addWidget(movie_section)
 
-        # Visualization area
+        # Visualization area - Make it fill available space
         self.image_label = QLabel("Visualization will be shown here")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setMinimumSize(800, 500)
+        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.image_label.setStyleSheet("background-color: #f0f0f0; border: 1px solid #cccccc;")
         viz_layout.addWidget(self.image_label)
+
+        # Visualization explanation area
+        self.viz_explanation = QTextBrowser()
+        self.viz_explanation.setMaximumHeight(150)
+        if not self.is_dark_mode:
+            self.viz_explanation.setStyleSheet("background-color: #f8f8f8; border: 1px solid #e0e0e0;")
+        self.viz_explanation.setText("Select a visualization to see explanation")
+        viz_layout.addWidget(self.viz_explanation)
 
         # Open report button
         self.report_btn = QPushButton("Open HTML Report")
@@ -229,12 +349,200 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         results_layout.addWidget(viz_widget)
 
+        # Tab 3: Features Display
+        features_tab = QWidget()
+        features_layout = QVBoxLayout(features_tab)
+
+        # Features header and overview
+        features_header = QLabel("Eye Movement Features for Autism Research")
+        features_header.setFont(QFont("Arial", 12, QFont.Bold))
+        features_layout.addWidget(features_header)
+
+        features_overview = QTextBrowser()
+        features_overview.setMaximumHeight(100)
+        features_overview.setHtml("""
+        <p>This tab displays extracted eye movement features that may serve as biomarkers for autism spectrum disorder classification.
+        Research suggests individuals with ASD exhibit distinct patterns of visual attention, particularly when viewing social stimuli.</p>
+        <p>Move your mouse over any feature name to see a detailed explanation of how it's calculated and its potential relevance to autism research.</p>
+        """)
+        features_layout.addWidget(features_overview)
+
+        # Create tables for different feature categories
+        self.create_feature_tables(features_layout)
+
+        # Add save features button
+        save_features_btn = QPushButton("Export Features to CSV")
+        save_features_btn.clicked.connect(self.save_features)
+        features_layout.addWidget(save_features_btn)
+
+        # Tab 4: Documentation
+        documentation_tab = QWidget()
+        documentation_layout = QVBoxLayout(documentation_tab)
+
+        # Create documentation browser with tabs for features and visualizations
+        doc_tabs = QTabWidget()
+        documentation_layout.addWidget(doc_tabs)
+
+        # Features documentation
+        feature_doc = QWidget()
+        feature_doc_layout = QVBoxLayout(feature_doc)
+
+        feature_doc_text = QTextBrowser()
+        feature_doc_text.setOpenExternalLinks(True)
+        feature_doc_text.setStyleSheet("font-size: 14px;")
+        feature_doc_text.setHtml(get_formatted_feature_documentation())
+
+        feature_doc_layout.addWidget(feature_doc_text)
+
+        # Visualization documentation
+        viz_doc = QWidget()
+        viz_doc_layout = QVBoxLayout(viz_doc)
+
+        viz_doc_text = QTextBrowser()
+        viz_doc_text.setOpenExternalLinks(True)
+        viz_doc_text.setStyleSheet("font-size: 14px;")
+        viz_doc_text.setHtml(get_formatted_visualization_documentation())
+
+        viz_doc_layout.addWidget(viz_doc_text)
+
+        # Add documentation tabs
+        doc_tabs.addTab(feature_doc, "Feature Documentation")
+        doc_tabs.addTab(viz_doc, "Visualization Documentation")
+
         # Add tabs to the main tab widget
         tabs.addTab(processing_tab, "Data Processing")
         tabs.addTab(results_tab, "Results & Visualization")
+        tabs.addTab(features_tab, "Extracted Features")
+        tabs.addTab(documentation_tab, "Documentation")
 
         # Set the central widget
         self.setCentralWidget(central_widget)
+
+    def create_feature_tables(self, parent_layout):
+        """Create organized tables for different categories of features"""
+        # Create a scrollable widget for all tables
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        features_scroll_layout = QVBoxLayout(scroll_content)
+        features_scroll_layout.setSpacing(10)  # Add spacing between feature groups
+
+        if not self.is_dark_mode:
+            # Fix the background color for light mode
+            scroll_content.setStyleSheet("background-color: #f5f5f5;")
+
+        # Create feature category sections
+        categories = [
+            ("Basic Information", ["participant_id"]),
+            ("Pupil Size Features", ["pupil_left_mean", "pupil_left_std", "pupil_left_min", "pupil_left_max",
+                                     "pupil_right_mean", "pupil_right_std", "pupil_right_min", "pupil_right_max"]),
+            ("Gaze Position Features", ["gaze_left_x_std", "gaze_left_y_std", "gaze_left_dispersion",
+                                        "gaze_right_x_std", "gaze_right_y_std", "gaze_right_dispersion"]),
+            ("Fixation Features",
+             ["fixation_left_count", "fixation_left_duration_mean", "fixation_left_duration_std", "fixation_left_rate",
+              "fixation_right_count", "fixation_right_duration_mean", "fixation_right_duration_std",
+              "fixation_right_rate"]),
+            ("Saccade Features", ["saccade_left_count", "saccade_left_amplitude_mean", "saccade_left_amplitude_std",
+                                  "saccade_left_duration_mean",
+                                  "saccade_right_count", "saccade_right_amplitude_mean", "saccade_right_amplitude_std",
+                                  "saccade_right_duration_mean"]),
+            ("Blink Features", ["blink_left_count", "blink_left_duration_mean", "blink_left_rate",
+                                "blink_right_count", "blink_right_duration_mean", "blink_right_rate"]),
+            ("Head Movement Features",
+             ["head_movement_mean", "head_movement_std", "head_movement_max", "head_movement_frequency"])
+        ]
+
+        # Create a table for each category
+        self.feature_tables = {}
+        for category_name, feature_keys in categories:
+            # Create a group box for each category
+            group_box = QGroupBox(category_name)
+            group_layout = QVBoxLayout(group_box)
+
+            # Create table
+            table = QTableWidget(0, 2)  # Rows will be added dynamically, 2 columns (Feature, Value)
+            table.setHorizontalHeaderLabels(["Feature", "Value"])
+            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+            table.verticalHeader().setVisible(False)
+
+            # Additional styling for light mode
+            if not self.is_dark_mode:
+                table.setStyleSheet("QTableWidget { background-color: white; border: 1px solid #ddd; }")
+
+            # Enable tooltips for the table
+            table.setMouseTracking(True)
+            table.cellEntered.connect(lambda row, col, t=table, features=feature_keys:
+                                      self.show_feature_tooltip(row, col, t, features))
+
+            # Store the table and its associated feature keys
+            self.feature_tables[category_name] = {
+                "table": table,
+                "features": feature_keys
+            }
+
+            group_layout.addWidget(table)
+            features_scroll_layout.addWidget(group_box)
+
+        scroll_area.setWidget(scroll_content)
+        parent_layout.addWidget(scroll_area)
+
+    def show_feature_tooltip(self, row, col, table, features):
+        """Show a tooltip with feature explanation when hovering over a feature name"""
+        if col == 0 and row < len(features):  # Only show tooltips for feature names column
+            feature_key = features[row]
+            if feature_key in self.feature_explanations:
+                explanation = self.feature_explanations[feature_key]
+                QToolTip.showText(QCursor.pos(), explanation)
+
+    def update_feature_tables(self, features_df):
+        """Update all feature tables with data from the features DataFrame"""
+        if features_df is None or features_df.empty:
+            return
+
+        # Store the features data
+        self.features_data = features_df
+
+        # For each category table, update the values
+        for category_name, table_info in self.feature_tables.items():
+            table = table_info["table"]
+            feature_keys = table_info["features"]
+
+            # Clear the table
+            table.setRowCount(0)
+
+            # Add rows for each feature in this category
+            for i, feature_key in enumerate(feature_keys):
+                if feature_key in features_df.columns:
+                    row_position = table.rowCount()
+                    table.insertRow(row_position)
+
+                    # Format the feature name to be more readable
+                    display_name = feature_key.replace('_', ' ').title()
+
+                    # Create items
+                    name_item = QTableWidgetItem(display_name)
+
+                    # Set tooltip with explanation if available
+                    if feature_key in self.feature_explanations:
+                        name_item.setToolTip(self.feature_explanations[feature_key])
+
+                    # Format the value based on type
+                    value = features_df[feature_key].iloc[0]
+                    if isinstance(value, (int, float)):
+                        # Format number with appropriate precision
+                        if value == int(value):
+                            value_text = str(int(value))
+                        else:
+                            value_text = f"{value:.4f}"
+                    else:
+                        value_text = str(value)
+
+                    value_item = QTableWidgetItem(value_text)
+
+                    # Add items to table
+                    table.setItem(row_position, 0, name_item)
+                    table.setItem(row_position, 1, value_item)
 
     def select_files(self):
         files, _ = QFileDialog.getOpenFileNames(
@@ -305,6 +613,10 @@ class EyeMovementAnalysisGUI(QMainWindow):
                    f"- {summary['blinks']} blinks\n"
                    f"- {summary['frames']} frames")
             QMessageBox.information(self, "Processing Complete", msg)
+
+        # Update the features display if features were extracted
+        if "features" in results and not results["features"].empty:
+            self.update_feature_tables(results["features"])
 
         # Update visualization controls if visualizations were generated
         if "visualizations" in results and results["visualizations"]:
@@ -429,6 +741,15 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 )
                 self.image_label.setPixmap(scaled_pixmap)
                 self.image_label.setAlignment(Qt.AlignCenter)
+
+                # Update the explanation text for this visualization
+                viz_name = viz_type.lower().replace(' ', '_')
+                for key in self.visualization_explanations:
+                    if key in viz_name:
+                        self.viz_explanation.setHtml(self.visualization_explanations[key])
+                        break
+                else:
+                    self.viz_explanation.setText(f"No detailed explanation available for {viz_type}.")
             else:
                 self.image_label.setText(f"Failed to load image: {plot_path}")
         except Exception as e:
@@ -443,6 +764,26 @@ class EyeMovementAnalysisGUI(QMainWindow):
             QMessageBox.warning(self, "Report Not Found",
                                 "The visualization report could not be found.")
 
+    def save_features(self):
+        """Save the extracted features to a CSV file"""
+        if self.features_data is None or self.features_data.empty:
+            QMessageBox.warning(self, "No Features Available",
+                                "There are no features available to export.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Features", "", "CSV Files (*.csv)"
+        )
+
+        if file_path:
+            try:
+                self.features_data.to_csv(file_path, index=False)
+                QMessageBox.information(self, "Export Successful",
+                                        f"Features successfully exported to {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Export Error",
+                                     f"Failed to export features: {str(e)}")
+
     def resizeEvent(self, event):
         """Handle window resize event to update image scaling"""
         super().resizeEvent(event)
@@ -450,6 +791,11 @@ class EyeMovementAnalysisGUI(QMainWindow):
             # Re-scale the current image if there is one
             self.show_visualization()
 
+    def showEvent(self, event):
+        """Handle window show event - make sure the window is maximized on startup"""
+        super().showEvent(event)
+        # Maximize window when first shown
+        self.showMaximized()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
