@@ -1177,7 +1177,8 @@ class MovieEyeTrackingVisualizer:
 
     def generate_report(self, results: Dict[str, Dict[str, List[str]]], output_dir: str) -> str:
         """
-        Generate an HTML report summarizing all visualizations.
+        Generate an HTML report with fully dynamic section discovery for each movie.
+        No hardcoded category names or structure - adapts to whatever data is present.
 
         Args:
             results: Dictionary with movie names as keys and dictionaries of plot types and paths as values
@@ -1196,124 +1197,395 @@ class MovieEyeTrackingVisualizer:
         def get_relative_path(path):
             return os.path.relpath(path, output_dir)
 
+        # Count total visualizations
+        total_visualizations = sum(sum(len(plots) for plots in movie_plots.values())
+                                   for movie_plots in results.values())
+
+        # Dynamically determine all unique category names across all results
+        all_categories = set()
+        for movie_plots in results.values():
+            all_categories.update(movie_plots.keys())
+
+        # Create a function to convert category names to display titles
+        def get_category_display_name(category):
+            """Convert a category key to a user-friendly display name"""
+            # Replace underscores with spaces and capitalize each word
+            return category.replace('_', ' ').title()
+
         with open(report_path, 'w') as f:
-            # Write HTML header
+            # Write HTML header with improved styling and modal functionality
             f.write("""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Eye Tracking Visualization Report</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        h1, h2, h3 {
-            color: #2c3e50;
-        }
-        .movie-section {
-            margin-bottom: 30px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 20px;
-        }
-        .plot-category {
-            margin-bottom: 20px;
-        }
-        .plot-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
-            gap: 20px;
-        }
-        .plot-container {
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 10px;
-            background-color: #f9f9f9;
-        }
-        .plot-container img {
-            max-width: 100%;
-            height: auto;
-            border: 1px solid #eee;
-        }
-        .plot-title {
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        .summary {
-            background-color: #f0f7ff;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-    </style>
-</head>
-<body>
-    <h1>Eye Tracking Visualization Report</h1>
-    <div class="summary">
-        <h2>Summary</h2>
-        <p>Total movies processed: """ + str(len(results)) + """</p>
-        <p>Total visualizations generated: """ + str(sum(sum(len(plots) for plots in movie_plots.values())
-                                                         for movie_plots in results.values())) + """</p>
-        <p>Generated on: """ + pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S") + """</p>
-    </div>
-""")
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Eye Tracking Visualization Report</title>
+        <style>
+            :root {
+                --primary-color: #2c3e50;
+                --secondary-color: #3498db;
+                --accent-color: #e74c3c;
+                --bg-color: #f9f9f9;
+                --text-color: #333;
+                --border-color: #ddd;
+            }
 
-            # Write movie sections
-            for movie_name, movie_plots in results.items():
-                f.write(f'<div class="movie-section">\n')
-                f.write(f'    <h2>Movie: {movie_name}</h2>\n')
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: var(--text-color);
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: var(--bg-color);
+            }
 
-                # Count plots by category
+            h1, h2, h3, h4 {
+                color: var(--primary-color);
+                margin-bottom: 0.5em;
+            }
+
+            h1 {
+                font-size: 2.5em;
+                text-align: center;
+                margin-bottom: 0.7em;
+                padding-bottom: 0.5em;
+                border-bottom: 2px solid var(--secondary-color);
+            }
+
+            h2 {
+                font-size: 1.8em;
+                margin-top: 1em;
+            }
+
+            .summary {
+                background-color: #e8f4fc;
+                padding: 20px;
+                border-radius: 8px;
+                margin-bottom: 30px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+
+            .movie-section {
+                margin-bottom: 30px;
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                overflow: hidden;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+
+            .movie-header {
+                padding: 15px 20px;
+                background-color: #f1f8fe;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                transition: background-color 0.3s;
+            }
+
+            .movie-header:hover {
+                background-color: #d9edfb;
+            }
+
+            .movie-header h2 {
+                margin: 0;
+                font-size: 1.5em;
+            }
+
+            .movie-header .count-badge {
+                background-color: var(--secondary-color);
+                color: white;
+                border-radius: 20px;
+                padding: 5px 12px;
+                font-size: 0.9em;
+                font-weight: 600;
+            }
+
+            .movie-content {
+                display: none;
+                padding: 20px;
+            }
+
+            .active .movie-content {
+                display: block;
+            }
+
+            .plot-summary {
+                background-color: #f5f5f5;
+                padding: 15px;
+                border-radius: 5px;
+                margin-bottom: 20px;
+            }
+
+            .plot-category {
+                margin-bottom: 25px;
+                border-bottom: 1px solid #eee;
+                padding-bottom: 15px;
+            }
+
+            .plot-category h3 {
+                color: var(--secondary-color);
+                margin-bottom: 15px;
+                font-size: 1.4em;
+            }
+
+            .plot-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+                gap: 20px;
+            }
+
+            .plot-container {
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 15px;
+                background-color: white;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }
+
+            .plot-container:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            }
+
+            .plot-container img {
+                max-width: 100%;
+                height: auto;
+                border-radius: 4px;
+                border: 1px solid #eee;
+                cursor: pointer; /* Indicate clickable */
+                transition: opacity 0.2s;
+            }
+
+            .plot-container img:hover {
+                opacity: 0.9;
+            }
+
+            .plot-title {
+                font-weight: 600;
+                margin-bottom: 10px;
+                color: var(--primary-color);
+            }
+
+            .timestamp {
+                color: #777;
+                font-style: italic;
+                text-align: center;
+                margin-top: 20px;
+            }
+
+            .footer {
+                text-align: center;
+                margin-top: 50px;
+                padding-top: 20px;
+                border-top: 1px solid var(--border-color);
+                color: #777;
+            }
+
+            /* Modal styles for image zoom */
+            .modal {
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                overflow: auto;
+                background-color: rgba(0,0,0,0.9);
+                opacity: 0;
+                transition: opacity 0.3s;
+            }
+
+            .modal.show {
+                display: flex;
+                opacity: 1;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .modal-content {
+                max-width: 95%;
+                max-height: 95vh;
+                margin: auto;
+                display: block;
+                animation: zoom 0.3s;
+            }
+
+            @keyframes zoom {
+                from {transform: scale(0.9)}
+                to {transform: scale(1)}
+            }
+
+            .modal-caption {
+                position: absolute;
+                bottom: 20px;
+                left: 0;
+                right: 0;
+                text-align: center;
+                color: white;
+                background-color: rgba(0,0,0,0.5);
+                padding: 10px;
+                font-size: 1.2em;
+            }
+
+            .close-modal {
+                position: absolute;
+                top: 15px;
+                right: 35px;
+                color: #f1f1f1;
+                font-size: 40px;
+                font-weight: bold;
+                transition: 0.3s;
+                cursor: pointer;
+            }
+
+            .close-modal:hover {
+                color: #bbb;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Eye Tracking Visualization Report</h1>
+
+        <div class="summary">
+            <h2>Summary</h2>
+            <p><strong>Total movies processed:</strong> """ + str(len(results)) + """</p>
+            <p><strong>Total visualizations generated:</strong> """ + str(total_visualizations) + """</p>
+            <p><strong>Generated on:</strong> """ + pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S") + """</p>
+        </div>
+
+        <!-- Image Modal -->
+        <div id="imageModal" class="modal">
+            <span class="close-modal" onclick="closeModal()">&times;</span>
+            <img class="modal-content" id="modalImg">
+            <div id="modalCaption" class="modal-caption"></div>
+        </div>
+
+        <script>
+            function toggleMovieSection(movieId) {
+                const section = document.getElementById(movieId);
+                section.classList.toggle('active');
+            }
+
+            // Modal functionality for image zoom
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImg');
+            const modalCaption = document.getElementById('modalCaption');
+
+            // Open modal when image is clicked
+            function showModal(imgSrc, caption) {
+                modalImg.src = imgSrc;
+                modalCaption.textContent = caption;
+                modal.classList.add('show');
+
+                // Prevent scrolling on body when modal is open
+                document.body.style.overflow = 'hidden';
+            }
+
+            // Close modal
+            function closeModal() {
+                modal.classList.remove('show');
+                setTimeout(() => {
+                    modalImg.src = '';
+                }, 300);
+
+                // Re-enable scrolling
+                document.body.style.overflow = 'auto';
+            }
+
+            // Close modal when clicking outside the image
+            modal.addEventListener('click', function(event) {
+                if (event.target === modal) {
+                    closeModal();
+                }
+            });
+
+            // Close modal with Escape key
+            document.addEventListener('keydown', function(event) {
+                if (event.key === 'Escape') {
+                    closeModal();
+                }
+            });
+        </script>
+    """)
+
+            # Write movie sections, each as a collapsible panel
+            for i, (movie_name, movie_plots) in enumerate(results.items()):
+                # Create a unique ID for this movie section
+                movie_id = f"movie-{i}"
+
+                # Count plots by category and total plots
                 category_counts = {category: len(plots) for category, plots in movie_plots.items() if plots}
+                total_plots = sum(category_counts.values())
+
+                # Start movie section
+                f.write(f'<div class="movie-section" id="{movie_id}">\n')
+
+                # Movie header (always visible, clickable)
+                f.write(f'    <div class="movie-header" onclick="toggleMovieSection(\'{movie_id}\')">\n')
+                f.write(f'        <h2>{movie_name}</h2>\n')
+                f.write(f'        <span class="count-badge">{total_plots} visualizations</span>\n')
+                f.write(f'    </div>\n')
+
+                # Movie content (initially hidden) - ALL visualization content goes inside this div
+                f.write(f'    <div class="movie-content">\n')
 
                 # Write summary for this movie
-                f.write('    <div class="plot-summary">\n')
-                f.write(f'        <p>Total visualizations: {sum(category_counts.values())}</p>\n')
-                f.write('        <ul>\n')
+                f.write('        <div class="plot-summary">\n')
+                f.write('            <ul>\n')
                 for category, count in category_counts.items():
                     if count > 0:
-                        f.write(f'            <li>{category.capitalize()}: {count}</li>\n')
-                f.write('        </ul>\n')
-                f.write('    </div>\n')
+                        category_display = get_category_display_name(category)
+                        f.write(f'                <li><strong>{category_display}:</strong> {count} plot(s)</li>\n')
+                f.write('            </ul>\n')
+                f.write('        </div>\n')
 
-                # Write plot categories
-                category_titles = {
-                    'general': 'General Visualizations',
-                    'gaze': 'Gaze Distribution Visualizations',
-                    'fixation': 'Fixation Visualizations',
-                    'saccade': 'Saccade Visualizations',
-                    'pupil': 'Pupil Size Visualizations',
-                    'social': 'Social Attention Visualizations'
-                }
-
+                # Write plot categories - dynamically based on what's in the data
                 for category, plots in movie_plots.items():
                     if plots:
-                        f.write(f'    <div class="plot-category">\n')
-                        f.write(f'        <h3>{category_titles.get(category, category.capitalize())}</h3>\n')
-                        f.write(f'        <div class="plot-grid">\n')
+                        category_display = get_category_display_name(category)
+                        f.write(f'        <div class="plot-category">\n')
+                        f.write(f'            <h3>{category_display}</h3>\n')
+                        f.write(f'            <div class="plot-grid">\n')
 
                         for plot_path in plots:
                             plot_name = os.path.basename(plot_path)
+                            # Make a more human-readable plot name by removing prefixes and extensions
+                            readable_name = os.path.splitext(plot_name)[0]  # Remove extension
+                            if '_' in readable_name:  # Remove prefix before underscore if present
+                                readable_name = readable_name.split('_', 1)[1]
+                            # Convert underscores to spaces and capitalize words
+                            readable_name = readable_name.replace('_', ' ').title()
+
                             rel_path = get_relative_path(plot_path)
 
-                            f.write(f'            <div class="plot-container">\n')
-                            f.write(f'                <div class="plot-title">{plot_name}</div>\n')
-                            f.write(f'                <img src="{rel_path}" alt="{plot_name}">\n')
-                            f.write(f'            </div>\n')
+                            f.write(f'                <div class="plot-container">\n')
+                            f.write(f'                    <div class="plot-title">{readable_name}</div>\n')
+                            # Add onclick event to show modal with full-size image
+                            f.write(
+                                f'                    <img src="{rel_path}" alt="{readable_name}" loading="lazy" onclick="showModal(\'{rel_path}\', \'{readable_name}\');">\n')
+                            f.write(f'                </div>\n')
 
+                        f.write(f'            </div>\n')
                         f.write(f'        </div>\n')
-                        f.write(f'    </div>\n')
 
+                # Close movie content div
+                f.write('    </div>\n')
+                # Close movie section div
                 f.write('</div>\n')
 
             # Write HTML footer
-            f.write("""</body>
-</html>""")
+            f.write("""    <div class="timestamp">
+            Report generated on: """ + pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S") + """
+        </div>
 
-        print(f"Generated HTML report at {report_path}")
-        return report_path
+        <div class="footer">
+            <p>Powered by Tal Alfi's Eye Movement Analysis for Autism Classification</p>
+        </div>
+    </body>
+    </html>""")
+
+            print(f"Generated dynamically structured HTML report at {report_path}")
+            return report_path
