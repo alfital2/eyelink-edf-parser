@@ -1,30 +1,35 @@
 # Eye Movement Analysis for Autism Classification
 
-A comprehensive toolkit for parsing, analyzing, and visualizing eye-tracking data to support autism research with movie-specific analysis capabilities.
+A comprehensive toolkit for analyzing eye-tracking data to support autism research, with interactive animations, deep learning integration, and advanced visualization capabilities.
 
 ## Overview
 
-This project provides a specialized set of tools for processing eye movement data recorded using SR Research EyeLink systems. The toolkit is specifically designed for autism spectrum disorder (ASD) research, focusing on characterizing visual attention patterns during movie viewing. It enables researchers to compare gaze behavior between individuals with ASD and neurotypical controls across multiple movie stimuli.
+This project provides specialized tools for processing and analyzing eye movement data recorded using SR Research EyeLink systems. The toolkit is specifically designed for autism spectrum disorder (ASD) research, focusing on characterizing visual attention patterns during movie viewing and extracting features that may serve as potential biomarkers for ASD classification.
 
 ## Key Features
 
-- **Movie-Specific Analysis**: Processes and visualizes eye-tracking data separately for each movie stimulus
-- **Hierarchical Organization**: Maintains clear directory structure with movie-specific visualizations
-- **Comprehensive Data Extraction**: Parses raw EyeLink ASC files into structured data formats
-- **Rich Visualization Library**: Generates multiple visualization types revealing different aspects of visual attention
-- **ML Feature Extraction**: Computes standardized features for machine learning classification
+- **Advanced Eye Movement Analysis**: Extract detailed metrics from raw EyeLink ASC files including fixations, saccades, blinks, and pupil size
+- **Movie-Specific Processing**: Analyze eye-tracking data separately for each movie stimulus
+- **Interactive Animated Scanpaths**: View eye movements with playback controls, adjustable speed, and timeline navigation
+- **Deep Learning Integration**: Ready for machine learning approaches to classify ASD from eye movement patterns
+- **Rich Visualization Library**: Generate multiple visualization types revealing different aspects of visual attention
+- **Social Attention Analysis**: Special focus on social vs. non-social attention patterns, a key area of difference in ASD
+- **ROI Support**: Analyze attention to specific regions of interest within visual stimuli
+- **GUI Interface**: User-friendly graphical interface with interactive visualization options
+- **HTML Report Generation**: Create comprehensive, dynamically structured reports for sharing results
+- **Animation Export**: Export eye movement animations as MP4 or GIF files
 
 ## Installation
 
 ```bash
-git clone https://github.com/username/eye-movement-analysis.git
+git clone https://github.com/alfital2/eye-movement-analysis.git
 cd eye-movement-analysis
 pip install -r requirements.txt
 ```
 
 ## Usage Guide
 
-### Basic Usage
+### Command Line Interface
 
 Process a single ASC file with visualizations:
 
@@ -32,21 +37,31 @@ Process a single ASC file with visualizations:
 python main.py --input path/to/file.asc --output results --visualize
 ```
 
-### Processing Multiple Files
-
-Process an entire directory of ASC files:
+Process multiple files:
 
 ```bash
 python main.py --input path/to/directory/ --output results --visualize
 ```
 
-### Generate HTML Report
-
-Process files and create a comprehensive HTML report:
+Generate HTML report:
 
 ```bash
 python main.py --input path/to/directory/ --output results --visualize --report
 ```
+
+### Graphical User Interface
+
+Launch the GUI for interactive analysis:
+
+```bash
+python GUI/gui.py
+```
+
+The GUI provides intuitive access to:
+- File selection and batch processing
+- Visualization browsing by movie and type
+- Feature extraction and exploration
+- Comprehensive documentation
 
 ### Command Line Options
 
@@ -84,7 +99,7 @@ results/
 │   │   └── report/                 # HTML report folder (if --report used)
 │   │       ├── visualization_report.html
 │   │       └── ... (report resources)
-│   └── features/                   # Extracted features for ML
+│   └── features/                   # Extracted features for ML/DL
 │       ├── *_features.csv          # Individual features
 │       └── combined_features.csv   # Combined features (for multiple files)
 ```
@@ -95,60 +110,78 @@ The toolkit generates multiple visualization types for each movie:
 
 ### 1. Eye Movement Visualizations
 
-- **Heatmaps**: Show gaze density across the screen for each eye
 - **Scanpaths**: Display the trajectory of eye movements with fixation markers
+- **Interactive Animated Scanpaths**: Dynamic visualization with playback controls, timeline navigation, and adjustable display settings
+- **Heatmaps**: Show gaze density across the screen for each eye
 - **Fixation-Saccade Distribution**: Visualize fixations and connecting saccades
 
 ### 2. Temporal Visualizations
 
 - **Pupil Size Timeseries**: Track pupil size changes throughout the movie
 - **Pupil Size and Eye Events**: Show relationship between pupil size and different eye events
+- **Frame-synchronized Playback**: Visualize eye movements in relation to movie frames
 
 ### 3. Statistical Distributions
 
 - **Fixation Duration Distribution**: Histogram of fixation durations for both eyes
 - **Saccade Amplitude Distribution**: Histogram of saccade amplitudes in visual degrees
+- **Statistical Summary**: Automatically calculated metrics including means, medians, and ranges
 
 ### 4. Social Attention Analysis
 
-- **Social vs. Non-social Attention**: Pie chart showing allocation of attention (note: requires manual AOI data)
+- **Social vs. Non-social Attention**: Pie chart showing allocation of attention
 - **Social Attention Timeline**: Shows changes in social attention over the course of the movie
+- **Region of Interest (ROI) Analysis**: Quantify attention to specific social regions like faces and eyes
 
-## Working with Social Attention Analysis
+## Key Features for Autism Research
 
-The Social Attention Analysis visualization requires manually defined Areas of Interest (AOIs):
+### Feature Extraction for Machine Learning
 
-1. **Default Behavior**: Without AOI data, the visualizer creates simulated AOIs for demonstration purposes
-2. **For Research Use**: You should provide real AOI data in the following format:
+The toolkit extracts over 30 features specifically relevant to autism research:
 
-```python
-# Format for ROI data: Dict mapping frame numbers to lists of ROIs
-roi_data = {
-    1: [(x1, y1, width1, height1, 'face'), (x2, y2, width2, height2, 'eyes')],
-    2: [(x1, y1, width1, height1, 'face'), (x2, y2, width2, height2, 'eyes')],
-    # ... more frames
-}
+- **Pupil Dynamics**: Size variations that may reflect differences in autonomic nervous system function
+- **Gaze Patterns**: Variability and dispersion metrics that quantify scanning behavior
+- **Fixation Characteristics**: Duration, count, and rate metrics that may indicate attentional differences
+- **Saccade Properties**: Amplitude and velocity metrics that reflect visual search strategies
+- **Head Movement**: Metrics that capture potential restlessness or compensation strategies
 
-# Then pass to the visualization function:
-visualizer.plot_social_attention_analysis(data, plots_dir, prefix, roi_data=roi_data)
-```
+### Social Attention Analysis
 
-## Data Files Generated
+The toolkit includes specialized analysis of attention to social versus non-social elements:
 
-### 1. Unified Eye Metrics CSV
+- Quantifies attention to faces, body parts, and other social regions
+- Tracks changes in social attention over time
+- Provides visualization of social attention patterns
+- Supports research on social attention as a potential biomarker for ASD
 
-Primary data file containing integrated eye-tracking metrics:
-- Eye positions, pupil sizes, velocity measures
-- Event flags (fixations, saccades, blinks)
-- Frame information
+## Working with Deep Learning
 
-### 2. Features CSV
+The features extracted by this toolkit are designed to be used with deep learning approaches:
 
-Aggregated features relevant for machine learning:
-- Pupil metrics (mean, std, min, max)
-- Gaze variability measures
-- Fixation, saccade, and blink statistics
-- Head movement metrics
+1. **Extract Features**: Process ASC files to generate standardized features
+2. **Combine Data**: Use the combined features CSV with your ML/DL framework
+3. **Classification**: Train models to distinguish ASD from control groups
+4. **Severity Prediction**: Use regression models to predict symptom severity
+
+## Testing Framework
+
+A comprehensive testing framework ensures reliable processing:
+
+- **Automated Tests**: Verify correct parsing and feature extraction
+- **Verification Tools**: Generate reports on processing accuracy
+- **Visual Verification**: Create plots of eye movement data for validation
+
+## GUI Features
+
+The graphical user interface provides:
+
+- **Intuitive Workflow**: Simple file selection and batch processing
+- **Interactive Visualization**: Browse all plots by movie and type
+- **Animated Scanpath Tab**: Dedicated interface for interactive eye movement animation
+- **Animation Controls**: Play/pause, speed adjustment, timeline scrubbing, and custom display options
+- **Feature Exploration**: Examine extracted features with detailed explanations and tooltips
+- **Export Capabilities**: Save animations as MP4 or GIF files
+- **Comprehensive Documentation**: Access detailed information about features and visualizations with research context
 
 ## Research Applications
 
@@ -158,7 +191,10 @@ This toolkit supports several key areas of autism research:
 2. **Biomarker Identification**: Extract consistent eye movement features that correlate with ASD diagnosis
 3. **Severity Assessment**: Quantify relationships between eye movement patterns and symptom severity
 4. **Longitudinal Analysis**: Track changes in visual attention over time or across interventions
-5. **Machine Learning Integration**: Use extracted features for classification or regression models
+5. **Deep Learning Integration**: Use extracted features for classification or regression models
+6. **Social Attention Dynamics**: Analyze how attention to social stimuli changes throughout movie viewing
+7. **ROI-Based Analysis**: Quantify attention to specific regions of interest in social scenes
+8. **Multi-Movie Consistency**: Examine consistency of gaze patterns across different movie stimuli
 
 ## Advanced Usage Examples
 
@@ -174,6 +210,17 @@ python main.py --input path/to/directory/ --output results --no_visualize
 python main.py --input path/to/directory/ --output results --visualize --report
 ```
 
+### Using the Animated Scanpath Feature
+
+1. Process your data through the GUI or command line
+2. In the GUI, navigate to the "Animated Scanpath" tab
+3. Select a movie from the dropdown menu
+4. Use playback controls to view eye movements in real time
+5. Adjust playback speed (0.25x to 4x)
+6. Modify trail length and display options
+7. Use the timeline slider to navigate to specific points
+8. Click "Save Animation" to export as MP4 or GIF
+
 ## Technical Notes
 
 - The parser is optimized for EyeLink 1000+ data but works with other EyeLink systems
@@ -186,10 +233,6 @@ python main.py --input path/to/directory/ --output results --visualize --report
 - **NaN Values in Visualizations**: Some plots may fail with NaN values; this typically indicates missing data in the ASC file
 - **Missing Frames**: If frame information is absent, certain plots may not display frame markers
 - **Social Attention Analysis**: Without manually defined AOIs, this plot uses simulated regions and should be interpreted accordingly
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
