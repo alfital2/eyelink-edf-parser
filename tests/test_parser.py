@@ -418,7 +418,7 @@ class TestEyeLinkASCParser(unittest.TestCase):
 
             # Check the movie segment details
             segment = self.parser.movie_segments[0]
-            self.assertEqual(segment['movie_name'], 'Test_Movie.xvd.',
+            self.assertEqual(segment['movie_name'], 'Test_Movie.xvd',
                              "Incorrect movie filename")
             self.assertEqual(segment['frame_count'], 3,
                              "Incorrect frame count in movie segment")
