@@ -27,6 +27,15 @@ jobs:
         # Testing
         pip install pytest
 
+    - name: Prepare test files
+      run: |
+        # Create directory if it doesn't exist
+        mkdir -p asc_files
+        # Copy test files to the expected location
+        cp tests/asc_files/* asc_files/
+        # List files to verify
+        ls -la asc_files/
+
     - name: Run tests
       run: |
         cd tests
