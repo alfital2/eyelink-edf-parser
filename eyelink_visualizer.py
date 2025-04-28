@@ -12,6 +12,8 @@ import seaborn as sns
 from typing import Dict, List, Tuple, Optional
 import glob
 
+from matplotlib import animation
+
 
 class MovieEyeTrackingVisualizer:
     """
@@ -231,6 +233,186 @@ class MovieEyeTrackingVisualizer:
             filename += f"_{time_window[0]}_{time_window[1]}"
 
         self.save_plot(plots_dir, filename, fig)
+
+    def generate_animated_scanpath(self,
+                                   data: pd.DataFrame,
+                                   plots_dir: str,
+                                   prefix: str = '',
+                                   max_points: int = 5000,
+                                   fps: int = 30,
+                                   trail_length: int = 100,
+                                   save_path: str = None):
+        """
+        Generate an animated version of the scanpath visualization.
+
+        Args:
+            data: DataFrame with unified eye metrics
+            plots_dir: Path to save the animation
+            prefix: Prefix for the filename
+            max_points: Maximum number of points to include (for performance)
+            fps: Frames per second for the animation
+            trail_length: Length of the trailing path behind the current point
+            save_path: Optional path to save the animation as a video file
+
+        Returns:
+            Path to the generated animation file or None if not saved
+        """
+        if data.empty:
+            print("Empty dataframe, cannot generate animated scanpath.")
+            return None
+
+        # Subsample if necessary for performance
+        if len(data) > max_points:
+            step = len(data) // max_points
+            df = data.iloc[::step].copy()
+        else:
+            df = data.copy()
+
+        # Convert timestamp to seconds from start for better visualization
+        df['time_sec'] = (df['timestamp'] - df['timestamp'].iloc[0]) / 1000.0
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=self.default_figsize)
+
+        # Set axis limits
+        ax.set_xlim(0, self.screen_width)
+        ax.set_ylim(self.screen_height, 0)  # Invert y-axis
+
+        # Add title and labels
+        ax.set_title('Animated Eye Movement Scanpath', fontsize=16)
+        ax.set_xlabel('X Position (pixels)', fontsize=12)
+        ax.set_ylabel('Y Position (pixels)', fontsize=12)
+
+        # Add grid
+        ax.grid(True, linestyle='--', alpha=0.7)
+
+        # Create line objects for animation
+        left_line, = ax.plot([], [], 'o-', color=self.colors['left_eye'],
+                             markersize=2, linewidth=0.5, alpha=0.7,
+                             label='Left Eye')
+
+        right_line, = ax.plot([], [], 'o-', color=self.colors['right_eye'],
+                              markersize=2, linewidth=0.5, alpha=0.7,
+                              label='Right Eye')
+
+        left_point, = ax.plot([], [], 'o', color=self.colors['left_eye'],
+                              markersize=8, alpha=1.0)
+
+        right_point, = ax.plot([], [], 'o', color=self.colors['right_eye'],
+                               markersize=8, alpha=1.0)
+
+        # Add legend
+        ax.legend(loc='upper right')
+
+        # Text objects for time and frame display
+        time_text = ax.text(0.02, 0.02, '', transform=ax.transAxes, fontsize=10,
+                            bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
+
+        frame_text = ax.text(0.02, 0.08, '', transform=ax.transAxes, fontsize=10,
+                             bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
+
+        # Animation initialization function
+        def init():
+            left_line.set_data([], [])
+            right_line.set_data([], [])
+            left_point.set_data([], [])
+            right_point.set_data([], [])
+            time_text.set_text('')
+            frame_text.set_text('')
+            return left_line, right_line, left_point, right_point, time_text, frame_text
+
+        # Animation update function
+        def update(frame_idx):
+            # Calculate trail start index
+            start_idx = max(0, frame_idx - trail_length)
+
+            # Get slice of data for trail
+            trail_data = df.iloc[start_idx:frame_idx + 1]
+
+            # Update left eye trail and current position
+            if 'x_left' in df.columns and 'y_left' in df.columns:
+                x_left = trail_data['x_left'].values
+                y_left = trail_data['y_left'].values
+
+                # Handle NaN values
+                mask_left = ~(np.isnan(x_left) | np.isnan(y_left))
+                if any(mask_left):
+                    left_line.set_data(x_left[mask_left], y_left[mask_left])
+
+                    # Update current position point
+                    current_x_left = df.iloc[frame_idx]['x_left']
+                    current_y_left = df.iloc[frame_idx]['y_left']
+
+                    if not (np.isnan(current_x_left) or np.isnan(current_y_left)):
+                        left_point.set_data([current_x_left], [current_y_left])
+                    else:
+                        left_point.set_data([], [])
+                else:
+                    left_line.set_data([], [])
+                    left_point.set_data([], [])
+
+            # Update right eye trail and current position
+            if 'x_right' in df.columns and 'y_right' in df.columns:
+                x_right = trail_data['x_right'].values
+                y_right = trail_data['y_right'].values
+
+                # Handle NaN values
+                mask_right = ~(np.isnan(x_right) | np.isnan(y_right))
+                if any(mask_right):
+                    right_line.set_data(x_right[mask_right], y_right[mask_right])
+
+                    # Update current position point
+                    current_x_right = df.iloc[frame_idx]['x_right']
+                    current_y_right = df.iloc[frame_idx]['y_right']
+
+                    if not (np.isnan(current_x_right) or np.isnan(current_y_right)):
+                        right_point.set_data([current_x_right], [current_y_right])
+                    else:
+                        right_point.set_data([], [])
+                else:
+                    right_line.set_data([], [])
+                    right_point.set_data([], [])
+
+            # Update time text
+            time_sec = df.iloc[frame_idx]['time_sec']
+            total_duration = df['time_sec'].iloc[-1]
+            time_text.set_text(f'Time: {time_sec:.2f}s / {total_duration:.2f}s')
+
+            # Update frame text if frame information exists
+            if 'frame_number' in df.columns:
+                frame_num = df.iloc[frame_idx]['frame_number']
+                if not pd.isna(frame_num):
+                    frame_text.set_text(f'Frame: {int(frame_num)}')
+                else:
+                    frame_text.set_text('')
+            else:
+                frame_text.set_text('')
+
+            return left_line, right_line, left_point, right_point, time_text, frame_text
+
+        # Create animation
+        ani = animation.FuncAnimation(
+            fig, update, frames=range(len(df)),
+            init_func=init, blit=True, interval=1000 / fps
+        )
+
+        # Save animation if path is provided
+        if save_path:
+            # Determine file format based on extension
+            if save_path.lower().endswith('.mp4'):
+                writer = animation.FFMpegWriter(fps=fps, bitrate=1800)
+                ani.save(save_path, writer=writer)
+            elif save_path.lower().endswith('.gif'):
+                ani.save(save_path, writer='pillow', fps=fps)
+
+            print(f"Animated scanpath saved to {save_path}")
+            return save_path
+
+        # If not saving, just show the plot interactively
+        plt.tight_layout()
+        plt.show()
+
+        return None
 
     def plot_heatmap(self,
                      data: pd.DataFrame,
@@ -1172,6 +1354,7 @@ class MovieEyeTrackingVisualizer:
                                    for movie_plots in results.values())
 
         print(f"\nVisualization complete! Generated {total_visualizations} plots across {total_movies} movies.")
+
 
         return results
 
