@@ -7,6 +7,9 @@ __pycache__/
 *.asc
 *.edf
 
+# Exception for test ASC files
+!tests/asc_files/*.asc
+
 # Virtual environment
 .venv/
 env/
