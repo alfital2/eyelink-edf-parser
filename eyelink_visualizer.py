@@ -741,7 +741,7 @@ class MovieEyeTrackingVisualizer:
 
         Args:
             data: DataFrame with unified eye metrics
-            plots_dir: Path to save the plot
+            plots_dir: Directory to save the plot
             prefix: Prefix for the plot filename
             window_size: Size of the moving average window for smoothing
             frame_markers: Whether to display movie frame markers
@@ -758,8 +758,9 @@ class MovieEyeTrackingVisualizer:
             print("No pupil size data available.")
             return
 
-        # Create figure
-        fig, ax = plt.subplots(figsize=self.default_figsize)
+        # Create figure with white background
+        fig, ax = plt.subplots(figsize=self.default_figsize, facecolor='white')
+        ax.set_facecolor('white')
 
         # Convert timestamp to seconds for better readability
         # First ensure timestamp column exists and is numeric
@@ -776,14 +777,22 @@ class MovieEyeTrackingVisualizer:
             pupil_left_smooth = data['pupil_left'].rolling(window=window_size, center=True, min_periods=1).mean()
 
             ax.plot(time_sec, pupil_left_smooth, color=self.colors['left_eye'],
-                    linewidth=1.5, label='Left Eye')
+                    linewidth=1.5, label='Left Eye', alpha=0.8)
 
-            # Optionally highlight blinks
+            # Mark only blink onset points, not every sample during a blink
             if 'is_blink_left' in data.columns:
-                blink_times = time_sec[data['is_blink_left']]
-                if len(blink_times) > 0:
-                    ax.scatter(blink_times, pupil_left_smooth[data['is_blink_left']],
-                               marker='x', color=self.colors['blink'], alpha=0.5, label='Left Blinks')
+                # Find transitions from False to True (blink start)
+                blink_starts = data.index[(~data['is_blink_left'].shift(1, fill_value=False)) &
+                                          data['is_blink_left']].tolist()
+
+                if blink_starts:
+                    # Get the timestamps and values for only the blink start points
+                    blink_start_times = [time_sec.iloc[i] for i in blink_starts if i < len(time_sec)]
+                    blink_start_values = [pupil_left_smooth.iloc[i] for i in blink_starts if i < len(pupil_left_smooth)]
+
+                    # Plot just one marker per blink
+                    ax.scatter(blink_start_times, blink_start_values,
+                               marker='x', color='red', alpha=0.8, s=50, label='Left Blinks')
 
         # Plot right eye pupil size if available
         if has_right_pupil:
@@ -791,40 +800,32 @@ class MovieEyeTrackingVisualizer:
             pupil_right_smooth = data['pupil_right'].rolling(window=window_size, center=True, min_periods=1).mean()
 
             ax.plot(time_sec, pupil_right_smooth, color=self.colors['right_eye'],
-                    linewidth=1.5, label='Right Eye')
+                    linewidth=1.5, label='Right Eye', alpha=0.8)
 
-            # Optionally highlight blinks
+            # Mark only blink onset points for right eye
             if 'is_blink_right' in data.columns:
-                blink_times = time_sec[data['is_blink_right']]
-                if len(blink_times) > 0:
-                    ax.scatter(blink_times, pupil_right_smooth[data['is_blink_right']],
-                               marker='x', color=self.colors['blink'], alpha=0.5, label='Right Blinks')
+                # Find transitions from False to True (blink start)
+                blink_starts = data.index[(~data['is_blink_right'].shift(1, fill_value=False)) &
+                                          data['is_blink_right']].tolist()
 
-        # Add frame markers if requested and available
-        if frame_markers and 'frame_number' in data.columns:
-            # Find transitions in frame numbers
-            frame_changes = data.index[data['frame_number'].diff() > 0].tolist()
+                if blink_starts:
+                    # Get the timestamps and values for only the blink start points
+                    blink_start_times = [time_sec.iloc[i] for i in blink_starts if i < len(time_sec)]
+                    blink_start_values = [pupil_right_smooth.iloc[i] for i in blink_starts if
+                                          i < len(pupil_right_smooth)]
 
-            if frame_changes:
-                # For each frame change, add a vertical line
-                for idx in frame_changes:
-                    if idx < len(time_sec):
-                        frame_num = data.iloc[idx]['frame_number']
-                        ax.axvline(x=time_sec[idx], color='green', linestyle='--', alpha=0.5)
-
-                        # Only label some frames to avoid cluttering
-                        if int(frame_num) % 5 == 0:  # Label every 5th frame
-                            ax.text(time_sec[idx], ax.get_ylim()[1] * 0.9, f"Frame {int(frame_num)}",
-                                    rotation=90, va='top', ha='right', fontsize=8, alpha=0.7)
+                    # Plot just one marker per blink
+                    ax.scatter(blink_start_times, blink_start_values,
+                               marker='x', color='blue', alpha=0.8, s=50, label='Right Blinks')
 
         # Add annotations
         ax.set_title('Pupil Size Over Time', fontsize=16)
         ax.set_xlabel('Time (seconds)', fontsize=12)
         ax.set_ylabel('Pupil Size', fontsize=12)
-        ax.legend(loc='best')
+        ax.legend(loc='upper right')
 
-        # Add grid for readability
-        ax.grid(True, linestyle='--', alpha=0.7)
+        # Add grid that doesn't overwhelm the data
+        ax.grid(True, linestyle='--', alpha=0.3, color='lightgray')
 
         # Calculate movie duration
         duration_sec = time_sec.iloc[-1]
@@ -836,10 +837,12 @@ class MovieEyeTrackingVisualizer:
 
         # Save the plot
         filename = f"{prefix}pupil_size_timeseries"
+        plt.tight_layout()
         self.save_plot(plots_dir, filename, fig)
 
         # Create an additional plot showing pupil size correlation with event markers
         self._plot_pupil_size_events(data, plots_dir, prefix, window_size)
+
 
     def _plot_pupil_size_events(self,
                                 data: pd.DataFrame,
