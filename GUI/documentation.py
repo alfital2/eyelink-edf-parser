@@ -139,16 +139,17 @@ def get_visualization_explanations():
         <h3>Pupil Size Timeseries</h3>
         <p>This visualization shows how pupil size changed over time during stimulus viewing. Pupil size is influenced by
         both cognitive factors (cognitive load, emotional arousal) and physiological factors (lighting conditions).</p>
-
+        
         <p><strong>Research Relevance:</strong> Pupil dynamics are increasingly studied in autism research:
         <ul>
-            <li>Different pupillary responses to social vs. non-social stimuli have been observed in ASD</li>
-            <li>Pupil responses may reflect differences in autonomic nervous system function</li>
-            <li>Changes in pupil size can indicate shifts in cognitive processing or emotional responses</li>
+           <li>Different pupillary responses to social vs. non-social stimuli have been observed in ASD</li>
+           <li>Pupil responses may reflect differences in autonomic nervous system function</li>
+           <li>Changes in pupil size can indicate shifts in cognitive processing or emotional responses</li>
         </ul></p>
-
-        <p>The pupil size events plot highlights the relationship between pupil size and different eye events
-        (fixations, saccades, blinks), showing how pupil dynamics interact with other aspects of visual attention.</p>
+        
+        <p>The 'x' markers indicate the onset of blink events for each eye. Distinct patterns in pupil dilation or constriction 
+        between blinks may reveal differences in cognitive processing or emotional reactivity that are characteristic of ASD. 
+        The comparison between left and right eyes can also provide insights into potential asymmetries in autonomic responses.</p>
         """,
 
         "social_attention": """
