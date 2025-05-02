@@ -142,59 +142,97 @@ class AnimatedScanpathWidget(QWidget):
 
         layout.addLayout(controls_layout)
 
-        # Settings group
-        settings_group = QGroupBox("Animation Settings")
-        settings_layout = QHBoxLayout(settings_group)
-
-        # Playback speed
+        # Settings section with proper organization
+        settings_container = QWidget()
+        settings_main_layout = QVBoxLayout(settings_container)
+        settings_main_layout.setSpacing(10)  # Add spacing between groups
+        
+        # First row: Animation controls and eye display options
+        animation_settings_group = QGroupBox("Animation Controls")
+        animation_settings_layout = QHBoxLayout(animation_settings_group)
+        animation_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
+        
+        # Playback speed controls
         speed_layout = QVBoxLayout()
-        speed_layout.addWidget(QLabel("Playback Speed:"))
+        speed_layout.setSpacing(5)
+        speed_label = QLabel("Playback Speed:")
+        speed_label.setAlignment(Qt.AlignCenter)
+        speed_layout.addWidget(speed_label)
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentText("1x")
         self.speed_combo.currentTextChanged.connect(self.update_playback_speed)
+        self.speed_combo.setMinimumWidth(100)
         speed_layout.addWidget(self.speed_combo)
-        settings_layout.addLayout(speed_layout)
-
-        # Trail length
+        animation_settings_layout.addLayout(speed_layout)
+        
+        # Add spacer between sections
+        animation_settings_layout.addSpacing(15)
+        
+        # Trail length controls
         trail_layout = QVBoxLayout()
-        trail_layout.addWidget(QLabel("Trail Length:"))
+        trail_layout.setSpacing(5)
+        trail_label = QLabel("Trail Length:")
+        trail_label.setAlignment(Qt.AlignCenter)
+        trail_layout.addWidget(trail_label)
         self.trail_spin = QSpinBox()
         self.trail_spin.setRange(10, 500)
         self.trail_spin.setValue(100)
         self.trail_spin.setSingleStep(10)
         self.trail_spin.valueChanged.connect(self.update_trail_length)
+        self.trail_spin.setMinimumWidth(100)
         trail_layout.addWidget(self.trail_spin)
-        settings_layout.addLayout(trail_layout)
-
-        # Display options
-        options_layout = QVBoxLayout()
-        options_layout.addWidget(QLabel("Display Options:"))
-
+        animation_settings_layout.addLayout(trail_layout)
+        
+        # Add spacer before export button
+        animation_settings_layout.addSpacing(15)
+        
+        # Export button
+        export_layout = QVBoxLayout()
+        export_layout.setSpacing(5)
+        export_label = QLabel("Animation:")
+        export_label.setAlignment(Qt.AlignCenter)
+        export_layout.addWidget(export_label)
+        self.export_button = QPushButton("Save to File")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self.export_animation)
+        self.export_button.setMinimumWidth(100)
+        export_layout.addWidget(self.export_button)
+        animation_settings_layout.addLayout(export_layout)
+        
+        # Second row: Display options
+        display_options_group = QGroupBox("Display Options")
+        display_options_layout = QHBoxLayout(display_options_group)
+        display_options_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
+        
+        # Eye tracking display options
+        eye_options_layout = QVBoxLayout()
+        eye_options_layout.setSpacing(8)
+        eye_options_label = QLabel("Eye Tracking:")
+        eye_options_label.setAlignment(Qt.AlignCenter)
+        eye_options_label.setStyleSheet("font-weight: bold;")
+        eye_options_layout.addWidget(eye_options_label)
+        
         self.show_left_cb = QCheckBox("Show Left Eye")
         self.show_left_cb.setChecked(True)
         self.show_left_cb.toggled.connect(self.redraw)
-        options_layout.addWidget(self.show_left_cb)
-
+        eye_options_layout.addWidget(self.show_left_cb)
+        
         self.show_right_cb = QCheckBox("Show Right Eye")
         self.show_right_cb.setChecked(True)
         self.show_right_cb.toggled.connect(self.redraw)
-        options_layout.addWidget(self.show_right_cb)
-
-        settings_layout.addLayout(options_layout)
-
-        # Export options
-        export_layout = QVBoxLayout()
-        export_layout.addWidget(QLabel("Export:"))
-
-        self.export_button = QPushButton("Save Animation")
-        self.export_button.setEnabled(False)
-        self.export_button.clicked.connect(self.export_animation)
-        export_layout.addWidget(self.export_button)
-
-        settings_layout.addLayout(export_layout)
-
-        layout.addWidget(settings_group)
+        eye_options_layout.addWidget(self.show_right_cb)
+        
+        # Add eye options to display options layout with stretch
+        display_options_layout.addLayout(eye_options_layout)
+        display_options_layout.addStretch(1)  # Add stretching space
+        
+        # Add both groups to main settings layout
+        settings_main_layout.addWidget(animation_settings_group)
+        settings_main_layout.addWidget(display_options_group)
+        
+        # Add settings container to main layout
+        layout.addWidget(settings_container)
 
         # Status label
         self.status_label = QLabel("Load eye tracking data to begin")

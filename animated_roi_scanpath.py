@@ -95,83 +95,143 @@ class AnimatedROIScanpathWidget(QWidget):
 
         layout.addLayout(controls_layout)
 
-        # Settings group
-        settings_group = QGroupBox("Animation Settings")
-        settings_layout = QHBoxLayout(settings_group)
-
-        # Playback speed
+        # Settings section with two groups in a vertical layout
+        settings_container = QWidget()
+        settings_main_layout = QVBoxLayout(settings_container)
+        settings_main_layout.setSpacing(10)  # Add spacing between groups
+        
+        # First row: Animation controls and eye display options
+        animation_settings_group = QGroupBox("Animation Controls")
+        animation_settings_layout = QHBoxLayout(animation_settings_group)
+        animation_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
+        
+        # Playback speed controls
         speed_layout = QVBoxLayout()
-        speed_layout.addWidget(QLabel("Playback Speed:"))
+        speed_layout.setSpacing(5)
+        speed_label = QLabel("Playback Speed:")
+        speed_label.setAlignment(Qt.AlignCenter)
+        speed_layout.addWidget(speed_label)
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentText("1x")
         self.speed_combo.currentTextChanged.connect(self.update_playback_speed)
+        self.speed_combo.setMinimumWidth(100)
         speed_layout.addWidget(self.speed_combo)
-        settings_layout.addLayout(speed_layout)
-
-        # Trail length
+        animation_settings_layout.addLayout(speed_layout)
+        
+        # Add spacer between sections
+        animation_settings_layout.addSpacing(15)
+        
+        # Trail length controls
         trail_layout = QVBoxLayout()
-        trail_layout.addWidget(QLabel("Trail Length:"))
+        trail_layout.setSpacing(5)
+        trail_label = QLabel("Trail Length:")
+        trail_label.setAlignment(Qt.AlignCenter)
+        trail_layout.addWidget(trail_label)
         self.trail_spin = QSpinBox()
         self.trail_spin.setRange(10, 500)
         self.trail_spin.setValue(100)
         self.trail_spin.setSingleStep(10)
         self.trail_spin.valueChanged.connect(self.update_trail_length)
+        self.trail_spin.setMinimumWidth(100)
         trail_layout.addWidget(self.trail_spin)
-        settings_layout.addLayout(trail_layout)
-
-        # Display options
-        options_layout = QVBoxLayout()
-        options_layout.addWidget(QLabel("Display Options:"))
-
-        self.show_left_cb = QCheckBox("Show Left Eye")
-        self.show_left_cb.setChecked(True)
-        self.show_left_cb.toggled.connect(self.redraw)
-        options_layout.addWidget(self.show_left_cb)
-
-        self.show_right_cb = QCheckBox("Show Right Eye")
-        self.show_right_cb.setChecked(True)
-        self.show_right_cb.toggled.connect(self.redraw)
-        options_layout.addWidget(self.show_right_cb)
-
-        settings_layout.addLayout(options_layout)
-
-        # ROI Options
-        roi_options_layout = QVBoxLayout()
-        roi_options_layout.addWidget(QLabel("ROI Options:"))
-
-        # ROI file selection 
-        roi_file_layout = QHBoxLayout()
-        self.select_roi_btn = QPushButton("Select ROI File")
-        self.select_roi_btn.clicked.connect(self.select_roi_file)
-        self.roi_file_label = QLabel("No ROI file selected")
-        roi_file_layout.addWidget(self.select_roi_btn)
-        roi_file_layout.addWidget(self.roi_file_label, 1)
-        roi_options_layout.addLayout(roi_file_layout)
+        animation_settings_layout.addLayout(trail_layout)
         
-        # Add a small space between the file selection and checkboxes
-        spacer = QWidget()
-        spacer.setFixedHeight(8)
-        roi_options_layout.addWidget(spacer)
-
+        # Add third spacer
+        animation_settings_layout.addStretch(1)
+        
+        # Second row: ROI display options
+        roi_settings_group = QGroupBox("ROI Display Options")
+        roi_settings_layout = QVBoxLayout(roi_settings_group)
+        roi_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
+        
+        # ROI file selection in a horizontal layout
+        roi_file_layout = QHBoxLayout()
+        roi_file_layout.setSpacing(10)
+        
+        self.select_roi_btn = QPushButton("Select ROI File")
+        self.select_roi_btn.setMinimumWidth(120)
+        self.select_roi_btn.clicked.connect(self.select_roi_file)
+        roi_file_layout.addWidget(self.select_roi_btn)
+        
+        self.roi_file_label = QLabel("No ROI file selected")
+        self.roi_file_label.setStyleSheet("padding: 5px; background-color: rgba(240, 240, 240, 50); border-radius: 3px;")
+        roi_file_layout.addWidget(self.roi_file_label, 1)
+        roi_settings_layout.addLayout(roi_file_layout)
+        
+        # Add spacing between file selection and checkboxes
+        roi_settings_layout.addSpacing(10)
+        
+        # Create horizontal layout for checkboxes
+        roi_options_container = QWidget()
+        roi_options_layout = QHBoxLayout(roi_options_container)
+        roi_options_layout.setContentsMargins(0, 0, 0, 0)
+        roi_options_layout.setSpacing(20)  # Space between sections
+        
+        # Left column - ROI visibility options
+        roi_visibility_layout = QVBoxLayout()
+        roi_visibility_layout.setSpacing(8)
+        
+        roi_visibility_label = QLabel("ROI Visibility:")
+        roi_visibility_label.setStyleSheet("font-weight: bold;")
+        roi_visibility_layout.addWidget(roi_visibility_label)
+        
         self.show_rois_cb = QCheckBox("Show ROIs")
         self.show_rois_cb.setChecked(True)
         self.show_rois_cb.toggled.connect(self.toggle_roi_display)
-        roi_options_layout.addWidget(self.show_rois_cb)
-
-        self.highlight_active_roi_cb = QCheckBox("Highlight Active ROI")
-        self.highlight_active_roi_cb.setChecked(True)
-        self.highlight_active_roi_cb.toggled.connect(self.toggle_roi_highlight)
-        roi_options_layout.addWidget(self.highlight_active_roi_cb)
-
+        roi_visibility_layout.addWidget(self.show_rois_cb)
+        
         self.show_roi_labels_cb = QCheckBox("Show ROI Labels")
         self.show_roi_labels_cb.setChecked(True)
         self.show_roi_labels_cb.toggled.connect(self.toggle_roi_labels)
-        roi_options_layout.addWidget(self.show_roi_labels_cb)
-
-        settings_layout.addLayout(roi_options_layout)
-
-        layout.addWidget(settings_group)
+        roi_visibility_layout.addWidget(self.show_roi_labels_cb)
+        
+        roi_options_layout.addLayout(roi_visibility_layout)
+        
+        # Right column - Eye tracking display options
+        eye_options_layout = QVBoxLayout()
+        eye_options_layout.setSpacing(8)
+        
+        eye_options_label = QLabel("Eye Tracking:")
+        eye_options_label.setStyleSheet("font-weight: bold;")
+        eye_options_layout.addWidget(eye_options_label)
+        
+        self.show_left_cb = QCheckBox("Show Left Eye")
+        self.show_left_cb.setChecked(True)
+        self.show_left_cb.toggled.connect(self.redraw)
+        eye_options_layout.addWidget(self.show_left_cb)
+        
+        self.show_right_cb = QCheckBox("Show Right Eye")
+        self.show_right_cb.setChecked(True)
+        self.show_right_cb.toggled.connect(self.redraw)
+        eye_options_layout.addWidget(self.show_right_cb)
+        
+        roi_options_layout.addLayout(eye_options_layout)
+        
+        # Highlighting options
+        highlight_options_layout = QVBoxLayout()
+        highlight_options_layout.setSpacing(8)
+        
+        highlight_options_label = QLabel("Highlighting:")
+        highlight_options_label.setStyleSheet("font-weight: bold;")
+        highlight_options_layout.addWidget(highlight_options_label)
+        
+        self.highlight_active_roi_cb = QCheckBox("Highlight Active ROI")
+        self.highlight_active_roi_cb.setChecked(True)
+        self.highlight_active_roi_cb.toggled.connect(self.toggle_roi_highlight)
+        highlight_options_layout.addWidget(self.highlight_active_roi_cb)
+        
+        roi_options_layout.addLayout(highlight_options_layout)
+        
+        # Add the options container to the main ROI layout
+        roi_settings_layout.addWidget(roi_options_container)
+        
+        # Add both groups to main settings layout
+        settings_main_layout.addWidget(animation_settings_group)
+        settings_main_layout.addWidget(roi_settings_group)
+        
+        # Add settings container to main layout
+        layout.addWidget(settings_container)
 
         # ROI dwell time statistics
         self.roi_stats_label = QLabel("ROI Dwell Times: Not available")
