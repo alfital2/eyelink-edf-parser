@@ -15,7 +15,7 @@ from eyelink_visualizer import MovieEyeTrackingVisualizer
 # Import documentation module
 from documentation import (get_feature_explanations, get_visualization_explanations,
                            get_formatted_feature_documentation, get_formatted_visualization_documentation)
-from animated_scanpath import AnimatedScanpathWidget
+from animated_roi_scanpath import AnimatedROIScanpathWidget
 
 
 class ProcessingThread(QThread):
@@ -98,28 +98,44 @@ class ProcessingThread(QThread):
             self.error_occurred.emit(f"Error: {str(e)}\n{traceback.format_exc()}")
 
 
-
-class AnimatedScanpathTab(QWidget):
-    """Tab widget for animated scanpath visualization."""
+class AnimatedROIScanpathTab(QWidget):
+    """Tab widget for animated scanpath visualization with ROI overlay."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.init_ui()
+        self.roi_file_path = None
 
     def init_ui(self):
         """Initialize the UI components."""
         layout = QVBoxLayout(self)
 
-        # Create the animated scanpath widget
-        self.scanpath_widget = AnimatedScanpathWidget()
+        # Create the animated ROI scanpath widget
+        self.scanpath_widget = AnimatedROIScanpathWidget()
 
         # Add widget to layout
         layout.addWidget(self.scanpath_widget)
 
-    def load_data(self, data, movie_name, screen_width=1280, screen_height=1024):
-        """Load data into the animated scanpath widget."""
-        return self.scanpath_widget.load_data(data, movie_name, screen_width, screen_height)
 
+    def load_data(self, data, movie_name, screen_width=1280, screen_height=1024):
+        """Load data into the animated ROI scanpath widget."""
+        # Store data for future reference
+        self.data = data
+        self.movie_name = movie_name
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        
+        # Pass ROI file path to the widget ONLY if explicitly set by user
+        if hasattr(self, 'roi_file_path') and self.roi_file_path and os.path.exists(self.roi_file_path):
+            # Update the widget's ROI file label
+            self.scanpath_widget.roi_file_label.setText(f"ROI File: {os.path.basename(self.roi_file_path)}")
+            
+            # Load data with ROI path
+            return self.scanpath_widget.load_data(data, self.roi_file_path, movie_name, screen_width, screen_height)
+        else:
+            # If no ROI file is explicitly selected, load eye data without ROI
+            self.scanpath_widget.status_label.setText("Please select a ROI file to visualize ROIs")
+            return self.scanpath_widget.load_data(data, None, movie_name, screen_width, screen_height)
 
 
 class EyeMovementAnalysisGUI(QMainWindow):
@@ -437,13 +453,18 @@ class EyeMovementAnalysisGUI(QMainWindow):
         # Add tabs to the main tab widget
         tabs.addTab(processing_tab, "Data Processing")
         tabs.addTab(results_tab, "Results & Visualization")
-        self.animated_viz_tab = AnimatedScanpathTab()
+        self.animated_viz_tab = AnimatedROIScanpathTab()
         tabs.addTab(self.animated_viz_tab, "Animated Scanpath")
         tabs.addTab(features_tab, "Extracted Features")
         tabs.addTab(documentation_tab, "Documentation")
 
         # Set the central widget
         self.setCentralWidget(central_widget)
+        
+        # Initialize the ROI file path attribute
+        self.roi_file_path = None
+        self.roi_data = None
+
 
     def create_feature_tables(self, parent_layout):
         """Create organized tables for different categories of features"""
@@ -669,6 +690,9 @@ class EyeMovementAnalysisGUI(QMainWindow):
             # If we have at least one movie, select it
             if self.movie_combo.count() > 0:
                 self.movie_combo.setCurrentIndex(0)
+                
+            # ROI files must be explicitly selected by the user, 
+            # not automatically loaded - no automatic ROI detection here
 
         # Enable the report button if a report was generated
         if 'report_path' in results and os.path.exists(results['report_path']):
@@ -805,6 +829,12 @@ class EyeMovementAnalysisGUI(QMainWindow):
                     print("Animation data is empty")
                     self.animated_viz_tab.scanpath_widget.status_label.setText("Error: Empty data file")
                 else:
+                    # Update ROI file path if found
+                    if 'roi_path' in locals() and os.path.exists(roi_path):
+                        self.animated_viz_tab.roi_file_path = roi_path
+                        self.animated_viz_tab.roi_file_label.setText(f"ROI File: {os.path.basename(roi_path)}")
+                        print(f"Setting ROI file to: {roi_path}")
+                
                     # Load data into the animated scanpath widget
                     success = self.animated_viz_tab.load_data(data, movie,
                                                               self.screen_width, self.screen_height)
@@ -821,6 +851,24 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
                     self.animated_viz_tab.scanpath_widget.status_label.setText(
                         f"No data file found for movie: {movie}")
+
+            if data_path and os.path.exists(data_path):
+                print(f"Loading animation data from: {data_path}")
+                data = pd.read_csv(data_path)
+
+                # No automatic ROI file loading - user must explicitly select the ROI file
+                
+                # Load data into the animated scanpath widget
+                success = self.animated_viz_tab.load_data(data, movie,
+                                                          self.screen_width, self.screen_height)
+
+                if success:
+                    self.status_label.setText(f"Loaded {len(data)} samples for animated visualization")
+                    
+                    # The animation tab is already loaded
+                else:
+                    self.status_label.setText("Failed to load data for animated visualization")
+
         except Exception as e:
             print(f"Error loading data for animated scanpath: {e}")
             import traceback
@@ -927,6 +975,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = EyeMovementAnalysisGUI()
+    
     window.screen_width = 1280
     window.screen_height = 1024
 

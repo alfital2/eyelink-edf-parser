@@ -41,6 +41,67 @@ class AnimatedScanpathWidget(QWidget):
         # Initialize UI
         self.init_ui()
 
+    def load_data(self, data, movie_name="Unknown", screen_width=1280, screen_height=1024):
+        """
+        Load eye tracking data for animation.
+
+        Args:
+            data: DataFrame with unified eye metrics
+            movie_name: Name of the movie
+            screen_width: Screen width in pixels
+            screen_height: Screen height in pixels
+        """
+        if data.empty:
+            self.status_label.setText("Error: Empty data")
+            return False
+
+        # Store data and settings
+        self.data = data
+        self.movie_name = movie_name
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+
+        # Reset animation state
+        self.is_playing = False
+        self.current_frame = 0
+        self.last_update_time = None
+
+        # Check for required columns
+        required_cols = ['timestamp', 'x_left', 'y_left', 'x_right', 'y_right']
+        missing_cols = [col for col in required_cols if col not in data.columns]
+
+        if missing_cols:
+            self.status_label.setText(f"Error: Missing columns: {', '.join(missing_cols)}")
+            return False
+
+        # Calculate relative time in seconds for better display
+        self.data['time_sec'] = (self.data['timestamp'] - self.data['timestamp'].iloc[0]) / 1000.0
+        self.total_duration = self.data['time_sec'].iloc[-1]
+
+        # Set up timeline slider
+        self.timeline_slider.setMinimum(0)
+        self.timeline_slider.setMaximum(len(data) - 1)
+        self.timeline_slider.setValue(0)
+
+        # Update time label
+        self.time_label.setText(f"0.0s / {self.total_duration:.1f}s")
+
+        # Enable controls
+        self.play_button.setEnabled(True)
+        self.reset_button.setEnabled(True)
+        self.timeline_slider.setEnabled(True)
+        self.export_button.setEnabled(True)
+
+        # Initialize the plot with the loaded data
+        self.redraw()
+
+        # Update status
+        self.status_label.setText(f"Loaded {len(data)} samples from {movie_name} "
+                                  f"({self.total_duration:.1f} seconds)")
+
+        return True
+
+
     def init_ui(self):
         """Initialize the widget UI."""
         layout = QVBoxLayout(self)
@@ -171,6 +232,7 @@ class AnimatedScanpathWidget(QWidget):
 
         self.ax.legend(loc='upper right')
         self.canvas.draw()
+
 
     def export_animation(self):
         """Export the animation as a video file."""
@@ -477,33 +539,33 @@ class AnimatedScanpathWidget(QWidget):
 
     def update_display(self):
         """Update the display based on current frame."""
-        if self.data is None or self.current_frame >= len(self.data):
+        if self.data is None or self.current_frame is None:
             return
 
         # Get trail length
         trail_length = self.trail_spin.value()
-
+        
         # Calculate trail start index
         start_idx = max(0, self.current_frame - trail_length)
-
+        
         # Get slice of data for trail
         trail_data = self.data.iloc[start_idx:self.current_frame + 1]
-
-        # Update left eye trail and current position
+        
+        # Update left eye trail if enabled
         if self.show_left_cb.isChecked():
             x_left = trail_data['x_left'].values
             y_left = trail_data['y_left'].values
-
-            # Handle NaN values in the trail
+            
+            # Handle NaN values
             mask_left = ~(np.isnan(x_left) | np.isnan(y_left))
             if any(mask_left):
                 self.left_line.set_data(x_left[mask_left], y_left[mask_left])
-
+                
                 # Update current position point
                 current_x_left = self.data.iloc[self.current_frame]['x_left']
                 current_y_left = self.data.iloc[self.current_frame]['y_left']
-
-                if not (np.isnan(current_x_left) or np.isnan(current_y_left)):
+                
+                if not (pd.isna(current_x_left) or pd.isna(current_y_left)):
                     self.left_point.set_data([current_x_left], [current_y_left])
                 else:
                     self.left_point.set_data([], [])
@@ -513,22 +575,22 @@ class AnimatedScanpathWidget(QWidget):
         else:
             self.left_line.set_data([], [])
             self.left_point.set_data([], [])
-
-        # Update right eye trail and current position
+            
+        # Update right eye trail if enabled
         if self.show_right_cb.isChecked():
             x_right = trail_data['x_right'].values
             y_right = trail_data['y_right'].values
-
-            # Handle NaN values in the trail
+            
+            # Handle NaN values
             mask_right = ~(np.isnan(x_right) | np.isnan(y_right))
             if any(mask_right):
                 self.right_line.set_data(x_right[mask_right], y_right[mask_right])
-
+                
                 # Update current position point
                 current_x_right = self.data.iloc[self.current_frame]['x_right']
                 current_y_right = self.data.iloc[self.current_frame]['y_right']
-
-                if not (np.isnan(current_x_right) or np.isnan(current_y_right)):
+                
+                if not (pd.isna(current_x_right) or pd.isna(current_y_right)):
                     self.right_point.set_data([current_x_right], [current_y_right])
                 else:
                     self.right_point.set_data([], [])
@@ -543,16 +605,9 @@ class AnimatedScanpathWidget(QWidget):
         current_time = self.data.iloc[self.current_frame]['time_sec']
         self.time_label.setText(f"{current_time:.1f}s / {self.total_duration:.1f}s")
 
-        # Add frame number if available
-        if 'frame_number' in self.data.columns:
-            current_frame_num = self.data.iloc[self.current_frame]['frame_number']
-            if not pd.isna(current_frame_num):
-                self.ax.set_title(f"Animated Scan Path - Frame {int(current_frame_num)}", fontsize=14)
-            else:
-                self.ax.set_title("Animated Scan Path", fontsize=14)
-
         # Redraw canvas
         self.canvas.draw()
+
 
     def redraw(self):
         """Completely redraw the plot."""
@@ -561,7 +616,7 @@ class AnimatedScanpathWidget(QWidget):
             self.ax.set_title(f"Animated Scan Path - {self.movie_name}", fontsize=14)
             self.update_display()
 
-    # Export animation and other methods remain unchanged
+
 
 def create_animated_scanpath(data, movie_name, screen_width=1280, screen_height=1024):
     """
