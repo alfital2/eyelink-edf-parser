@@ -3,29 +3,6 @@ ROI Integration Module for Eye Movement Analysis
 Author: Tal Alfi
 Date: April 2025
 """
-"""
-ROI Integration Module for Eye Movement Analysis
-Author: Tal Alfi
-Date: April 2025
-"""
-
-import os
-import sys
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Tuple
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QCheckBox,
-                             QPushButton, QFileDialog, QMessageBox, QLabel)
-from PyQt5.QtCore import Qt
-
-# Import our modules
-from roi_manager import ROIManager
-
-"""
-ROI Integration Module for Eye Movement Analysis - Corrected Attribute Names
-Author: Tal Alfi
-Date: April 2025
-"""
 
 import os
 import sys
@@ -371,6 +348,102 @@ def integrate_roi_visualization(main_gui):
             "Integration Error",
             "Could not find Animated Scanpath tab to enhance with ROI visualization."
         )
+
+# Helper functions for testing
+def load_sample_data(eye_data_path, roi_data_path):
+    """
+    Load sample eye tracking data and ROI data for testing purposes.
+    
+    Args:
+        eye_data_path: Path to eye tracking CSV file
+        roi_data_path: Path to ROI JSON file
+        
+    Returns:
+        Tuple of (eye_data, roi_manager)
+    """
+    import pandas as pd
+    
+    # Load eye tracking data
+    try:
+        eye_data = pd.read_csv(eye_data_path)
+        print(f"Loaded eye tracking data with {len(eye_data)} samples")
+    except Exception as e:
+        print(f"Error loading eye tracking data: {str(e)}")
+        eye_data = pd.DataFrame()
+    
+    # Load ROI data
+    roi_manager = ROIManager()
+    if os.path.exists(roi_data_path):
+        success = roi_manager.load_roi_file(roi_data_path)
+        if success:
+            print(f"Loaded ROI data with {len(roi_manager.frame_numbers)} frames")
+        else:
+            print(f"Failed to load ROI data from {roi_data_path}")
+    else:
+        print(f"ROI data file not found: {roi_data_path}")
+    
+    return eye_data, roi_manager
+
+def create_integrated_visualization(eye_data, roi_manager, frame_number=1, save_path=None):
+    """
+    Create a visualization that integrates eye tracking data with ROI overlays.
+    
+    Args:
+        eye_data: DataFrame with eye tracking data
+        roi_manager: ROIManager instance with loaded ROI data
+        frame_number: Frame number to visualize
+        save_path: Path to save the visualization
+        
+    Returns:
+        Matplotlib figure
+    """
+    import matplotlib.pyplot as plt
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Set axis limits for normalized coordinates
+    ax.set_xlim(0, 1)
+    ax.set_ylim(1, 0)  # Invert y-axis to match screen coordinates
+    
+    # Find eye positions for this frame if available
+    frame_data = eye_data[eye_data['frame_number'] == frame_number] if 'frame_number' in eye_data.columns else None
+    
+    if frame_data is not None and not frame_data.empty:
+        # Plot eye positions
+        for eye, color in [('left', 'blue'), ('right', 'orange')]:
+            x_col, y_col = f'x_{eye}', f'y_{eye}'
+            
+            if x_col in frame_data.columns and y_col in frame_data.columns:
+                # Normalize if needed
+                if frame_data[x_col].max() > 1.0 or frame_data[y_col].max() > 1.0:
+                    screen_width, screen_height = 1280, 1024  # Default screen dimensions
+                    x_norm = frame_data[x_col] / screen_width
+                    y_norm = frame_data[y_col] / screen_height
+                else:
+                    x_norm, y_norm = frame_data[x_col], frame_data[y_col]
+                
+                # Plot eye positions
+                ax.scatter(x_norm, y_norm, c=color, label=f'{eye.title()} Eye', alpha=0.8, s=50)
+    
+    # Draw ROIs
+    roi_manager.draw_rois_on_axis(ax, frame_number)
+    
+    # Add title and labels
+    ax.set_title(f"Integrated Eye Tracking and ROI Visualization - Frame {frame_number}", fontsize=14)
+    ax.set_xlabel("X Position (normalized)", fontsize=12)
+    ax.set_ylabel("Y Position (normalized)", fontsize=12)
+    
+    # Add grid and legend
+    ax.grid(True, linestyle='--', alpha=0.7)
+    ax.legend()
+    
+    # Save if requested
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved visualization to {save_path}")
+    
+    return fig
 
 # Test the integration
 if __name__ == "__main__":

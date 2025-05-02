@@ -41,6 +41,8 @@ class AnimatedScanpathWidget(QWidget):
         # Initialize UI
         self.init_ui()
 
+
+
     def load_data(self, data, movie_name="Unknown", screen_width=1280, screen_height=1024):
         """
         Load eye tracking data for animation.
@@ -100,7 +102,6 @@ class AnimatedScanpathWidget(QWidget):
                                   f"({self.total_duration:.1f} seconds)")
 
         return True
-
 
     def init_ui(self):
         """Initialize the widget UI."""
@@ -375,65 +376,6 @@ class AnimatedScanpathWidget(QWidget):
 
         self.export_button.setEnabled(True)
 
-    def load_data(self, data, movie_name="Unknown", screen_width=1280, screen_height=1024):
-        """
-        Load eye tracking data for animation.
-
-        Args:
-            data: DataFrame with unified eye metrics
-            movie_name: Name of the movie
-            screen_width: Screen width in pixels
-            screen_height: Screen height in pixels
-        """
-        if data.empty:
-            self.status_label.setText("Error: Empty data")
-            return False
-
-        # Store data and settings
-        self.data = data
-        self.movie_name = movie_name
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-
-        # Reset animation state
-        self.is_playing = False
-        self.current_frame = 0
-        self.last_update_time = None
-
-        # Check for required columns
-        required_cols = ['timestamp', 'x_left', 'y_left', 'x_right', 'y_right']
-        missing_cols = [col for col in required_cols if col not in data.columns]
-
-        if missing_cols:
-            self.status_label.setText(f"Error: Missing columns: {', '.join(missing_cols)}")
-            return False
-
-        # Calculate relative time in seconds for better display
-        self.data['time_sec'] = (self.data['timestamp'] - self.data['timestamp'].iloc[0]) / 1000.0
-        self.total_duration = self.data['time_sec'].iloc[-1]
-
-        # Set up timeline slider
-        self.timeline_slider.setMinimum(0)
-        self.timeline_slider.setMaximum(len(data) - 1)
-        self.timeline_slider.setValue(0)
-
-        # Update time label
-        self.time_label.setText(f"0.0s / {self.total_duration:.1f}s")
-
-        # Enable controls
-        self.play_button.setEnabled(True)
-        self.reset_button.setEnabled(True)
-        self.timeline_slider.setEnabled(True)
-        self.export_button.setEnabled(True)
-
-        # Initialize the plot with the loaded data
-        self.redraw()
-
-        # Update status
-        self.status_label.setText(f"Loaded {len(data)} samples from {movie_name} "
-                                  f"({self.total_duration:.1f} seconds)")
-
-        return True
 
     def update_playback_speed(self):
         """Update the playback speed based on combo box selection."""
