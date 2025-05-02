@@ -65,52 +65,87 @@ class AnimatedROIScanpathWidget(QWidget):
         self.canvas = FigureCanvasQTAgg(self.fig)
         self.canvas.setMinimumHeight(500)
 
-        # Add canvas to layout
+        # Add canvas to layout with some spacing
         layout.addWidget(self.canvas)
+        layout.addSpacing(10)  # Add a small gap after the canvas
 
-        # Create controls
-        controls_layout = QHBoxLayout()
+        # Create playback controls in a panel
+        controls_panel = QGroupBox("Playback Controls")
+        controls_layout = QHBoxLayout(controls_panel)
+        controls_layout.setSpacing(10)
 
-        # Play/Pause button
+        # Play/Pause button with styling
         self.play_button = QPushButton("▶ Play")
         self.play_button.setEnabled(False)
+        self.play_button.setMinimumWidth(80)
+        self.play_button.setStyleSheet("font-weight: bold;")
         self.play_button.clicked.connect(self.toggle_play)
         controls_layout.addWidget(self.play_button)
 
-        # Reset button
+        # Reset button with styling
         self.reset_button = QPushButton("⟲ Reset")
         self.reset_button.setEnabled(False)
+        self.reset_button.setMinimumWidth(80)
         self.reset_button.clicked.connect(self.reset_animation)
         controls_layout.addWidget(self.reset_button)
 
-        # Timeline slider
+        # Timeline slider with better appearance
+        slider_container = QWidget()
+        slider_layout = QVBoxLayout(slider_container)
+        slider_layout.setContentsMargins(5, 0, 5, 0)
+        slider_layout.setSpacing(2)
+        
         self.timeline_slider = QSlider(Qt.Horizontal)
         self.timeline_slider.setEnabled(False)
         self.timeline_slider.valueChanged.connect(self.slider_moved)
-        controls_layout.addWidget(self.timeline_slider, 1)  # Give slider more space
-
-        # Time display
+        slider_layout.addWidget(self.timeline_slider)
+        
+        # Time display below slider
         self.time_label = QLabel("0.0s / 0.0s")
-        controls_layout.addWidget(self.time_label)
+        self.time_label.setAlignment(Qt.AlignCenter)
+        slider_layout.addWidget(self.time_label)
+        
+        controls_layout.addWidget(slider_container, 1)  # Give slider container more space
 
-        layout.addLayout(controls_layout)
+        layout.addWidget(controls_panel)
+        layout.addSpacing(10)  # Add spacing after controls panel
 
-        # Settings group
-        settings_group = QGroupBox("Animation Settings")
-        settings_layout = QHBoxLayout(settings_group)
-
-        # Playback speed
-        speed_layout = QVBoxLayout()
-        speed_layout.addWidget(QLabel("Playback Speed:"))
+        # Settings section with two groups in a vertical layout
+        settings_container = QWidget()
+        settings_main_layout = QVBoxLayout(settings_container)
+        settings_main_layout.setContentsMargins(0, 0, 0, 0)
+        settings_main_layout.setSpacing(10)  # Space between the two groups
+        
+        # First row: Animation controls and eye display options
+        animation_settings_group = QGroupBox("Animation Controls")
+        animation_settings_layout = QHBoxLayout(animation_settings_group)
+        animation_settings_layout.setSpacing(20)  # Space between sections
+        
+        # ---- First column: Playback settings ----
+        playback_widget = QWidget()
+        playback_layout = QVBoxLayout(playback_widget)
+        playback_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create a bold header
+        playback_header = QLabel("Playback Settings")
+        font = playback_header.font()
+        font.setBold(True)
+        playback_header.setFont(font)
+        playback_layout.addWidget(playback_header)
+        
+        # Playback speed in a horizontal layout
+        speed_layout = QHBoxLayout()
+        speed_layout.addWidget(QLabel("Speed:"))
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentText("1x")
         self.speed_combo.currentTextChanged.connect(self.update_playback_speed)
         speed_layout.addWidget(self.speed_combo)
-        settings_layout.addLayout(speed_layout)
-
-        # Trail length
-        trail_layout = QVBoxLayout()
+        speed_layout.addStretch(1)  # Push controls to the left
+        playback_layout.addLayout(speed_layout)
+        
+        # Trail length in a horizontal layout
+        trail_layout = QHBoxLayout()
         trail_layout.addWidget(QLabel("Trail Length:"))
         self.trail_spin = QSpinBox()
         self.trail_spin.setRange(10, 500)
@@ -118,71 +153,129 @@ class AnimatedROIScanpathWidget(QWidget):
         self.trail_spin.setSingleStep(10)
         self.trail_spin.valueChanged.connect(self.update_trail_length)
         trail_layout.addWidget(self.trail_spin)
-        settings_layout.addLayout(trail_layout)
-
-        # Display options
-        options_layout = QVBoxLayout()
-        options_layout.addWidget(QLabel("Display Options:"))
-
+        trail_layout.addStretch(1)  # Push controls to the left
+        playback_layout.addLayout(trail_layout)
+        
+        playback_layout.addStretch(1)  # Push everything to the top
+        animation_settings_layout.addWidget(playback_widget, 1)  # Take 1 part of space
+        
+        # ---- Second column: Display Options ----
+        display_widget = QWidget()
+        display_layout = QVBoxLayout(display_widget)
+        display_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create a bold header
+        display_header = QLabel("Display Options")
+        display_header.setFont(font)  # Reuse the bold font
+        display_layout.addWidget(display_header)
+        
+        # Eye display options
         self.show_left_cb = QCheckBox("Show Left Eye")
         self.show_left_cb.setChecked(True)
         self.show_left_cb.toggled.connect(self.redraw)
-        options_layout.addWidget(self.show_left_cb)
-
+        display_layout.addWidget(self.show_left_cb)
+        
         self.show_right_cb = QCheckBox("Show Right Eye")
         self.show_right_cb.setChecked(True)
         self.show_right_cb.toggled.connect(self.redraw)
-        options_layout.addWidget(self.show_right_cb)
-
-        settings_layout.addLayout(options_layout)
-
-        # ROI Options
-        roi_options_layout = QVBoxLayout()
-        roi_options_layout.addWidget(QLabel("ROI Options:"))
-
-        # ROI file selection 
-        roi_file_layout = QHBoxLayout()
-        self.select_roi_btn = QPushButton("Select ROI File")
-        self.select_roi_btn.clicked.connect(self.select_roi_file)
-        self.roi_file_label = QLabel("No ROI file selected")
-        roi_file_layout.addWidget(self.select_roi_btn)
-        roi_file_layout.addWidget(self.roi_file_label, 1)
-        roi_options_layout.addLayout(roi_file_layout)
+        display_layout.addWidget(self.show_right_cb)
         
-        # Add a small space between the file selection and checkboxes
-        spacer = QWidget()
-        spacer.setFixedHeight(8)
-        roi_options_layout.addWidget(spacer)
-
+        display_layout.addStretch(1)  # Push everything to the top
+        animation_settings_layout.addWidget(display_widget, 1)  # Take 1 part of space
+        
+        # ---- Third column: ROI file selection ----
+        roi_file_widget = QWidget()
+        roi_file_layout = QVBoxLayout(roi_file_widget)
+        roi_file_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create a bold header
+        roi_file_header = QLabel("ROI File")
+        roi_file_header.setFont(font)  # Reuse the bold font
+        roi_file_layout.addWidget(roi_file_header)
+        
+        # ROI file selection button
+        self.select_roi_btn = QPushButton("Select ROI File")
+        self.select_roi_btn.setMinimumWidth(120)
+        self.select_roi_btn.clicked.connect(self.select_roi_file)
+        roi_file_layout.addWidget(self.select_roi_btn)
+        
+        # ROI file label
+        self.roi_file_label = QLabel("No ROI file selected")
+        self.roi_file_label.setWordWrap(True)
+        roi_file_layout.addWidget(self.roi_file_label)
+        
+        roi_file_layout.addStretch(1)  # Push everything to the top
+        animation_settings_layout.addWidget(roi_file_widget, 1)  # Take 1 part of space
+        
+        # Add the first row to the main settings layout
+        settings_main_layout.addWidget(animation_settings_group)
+        
+        # Second row: ROI display options
+        roi_settings_group = QGroupBox("ROI Display Options")
+        roi_settings_layout = QHBoxLayout(roi_settings_group)
+        
+        # ROI display options
+        roi_display_layout = QVBoxLayout()
+        
+        # Organize checkboxes in a grid layout for better spacing
+        roi_options_grid = QHBoxLayout()
+        
+        # Show ROIs checkbox
         self.show_rois_cb = QCheckBox("Show ROIs")
         self.show_rois_cb.setChecked(True)
         self.show_rois_cb.toggled.connect(self.toggle_roi_display)
-        roi_options_layout.addWidget(self.show_rois_cb)
-
+        roi_options_grid.addWidget(self.show_rois_cb)
+        
+        # Show ROI labels checkbox
+        self.show_roi_labels_cb = QCheckBox("Show Labels")
+        self.show_roi_labels_cb.setChecked(True)
+        self.show_roi_labels_cb.toggled.connect(self.toggle_roi_labels)
+        roi_options_grid.addWidget(self.show_roi_labels_cb)
+        
+        # Highlight active ROI checkbox
         self.highlight_active_roi_cb = QCheckBox("Highlight Active ROI")
         self.highlight_active_roi_cb.setChecked(True)
         self.highlight_active_roi_cb.toggled.connect(self.toggle_roi_highlight)
-        roi_options_layout.addWidget(self.highlight_active_roi_cb)
-
-        self.show_roi_labels_cb = QCheckBox("Show ROI Labels")
-        self.show_roi_labels_cb.setChecked(True)
-        self.show_roi_labels_cb.toggled.connect(self.toggle_roi_labels)
-        roi_options_layout.addWidget(self.show_roi_labels_cb)
-
-        settings_layout.addLayout(roi_options_layout)
-
-        layout.addWidget(settings_group)
-
-        # ROI dwell time statistics
-        self.roi_stats_label = QLabel("ROI Dwell Times: Not available")
-        layout.addWidget(self.roi_stats_label)
-
-        # Current ROI indicator
+        roi_options_grid.addWidget(self.highlight_active_roi_cb)
+        
+        roi_options_grid.addStretch(1)
+        roi_display_layout.addLayout(roi_options_grid)
+        
+        roi_settings_layout.addLayout(roi_display_layout)
+        
+        # Add the second row to the main settings layout
+        settings_main_layout.addWidget(roi_settings_group)
+        
+        # Add the settings container to the main layout
+        layout.addWidget(settings_container)
+        layout.addSpacing(10)  # Add spacing after settings
+        
+        # ROI Info panel
+        roi_info_panel = QGroupBox("ROI Information")
+        roi_info_layout = QVBoxLayout(roi_info_panel)
+        
+        # Current ROI indicator with larger font and better styling
         self.current_roi_label = QLabel("Current ROI: None")
-        layout.addWidget(self.current_roi_label)
+        current_roi_font = self.current_roi_label.font()
+        current_roi_font.setBold(True)
+        current_roi_font.setPointSize(current_roi_font.pointSize() + 1)
+        self.current_roi_label.setFont(current_roi_font)
+        self.current_roi_label.setAlignment(Qt.AlignCenter)
+        self.current_roi_label.setStyleSheet("padding: 5px; border-radius: 3px; background-color: #f0f0f0;")
+        roi_info_layout.addWidget(self.current_roi_label)
+        
+        # ROI dwell time statistics with better formatting
+        self.roi_stats_label = QLabel("ROI Dwell Times: Not available")
+        self.roi_stats_label.setWordWrap(True)
+        self.roi_stats_label.setStyleSheet("padding: 5px;")
+        roi_info_layout.addWidget(self.roi_stats_label)
+        
+        layout.addWidget(roi_info_panel)
 
-        # Status label
+        # Status label with better styling
         self.status_label = QLabel("Please select a ROI file using the 'Select ROI File' button to visualize ROIs")
+        self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet("padding: 5px; font-style: italic; color: #606060;")
         layout.addWidget(self.status_label)
 
         # Initialize the plot
