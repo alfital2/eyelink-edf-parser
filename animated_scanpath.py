@@ -147,10 +147,14 @@ class AnimatedScanpathWidget(QWidget):
         settings_main_layout = QVBoxLayout(settings_container)
         settings_main_layout.setSpacing(10)  # Add spacing between groups
         
-        # First row: Animation controls and eye display options
+        # Animation controls with eye display options
         animation_settings_group = QGroupBox("Animation Controls")
         animation_settings_layout = QHBoxLayout(animation_settings_group)
         animation_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
+        
+        # Left side: Playback controls
+        playback_controls_layout = QVBoxLayout()
+        playback_controls_layout.setSpacing(10)
         
         # Playback speed controls
         speed_layout = QVBoxLayout()
@@ -164,10 +168,7 @@ class AnimatedScanpathWidget(QWidget):
         self.speed_combo.currentTextChanged.connect(self.update_playback_speed)
         self.speed_combo.setMinimumWidth(100)
         speed_layout.addWidget(self.speed_combo)
-        animation_settings_layout.addLayout(speed_layout)
-        
-        # Add spacer between sections
-        animation_settings_layout.addSpacing(15)
+        playback_controls_layout.addLayout(speed_layout)
         
         # Trail length controls
         trail_layout = QVBoxLayout()
@@ -182,30 +183,15 @@ class AnimatedScanpathWidget(QWidget):
         self.trail_spin.valueChanged.connect(self.update_trail_length)
         self.trail_spin.setMinimumWidth(100)
         trail_layout.addWidget(self.trail_spin)
-        animation_settings_layout.addLayout(trail_layout)
+        playback_controls_layout.addLayout(trail_layout)
         
-        # Add spacer before export button
-        animation_settings_layout.addSpacing(15)
+        # Add playback controls to the main layout
+        animation_settings_layout.addLayout(playback_controls_layout)
         
-        # Export button
-        export_layout = QVBoxLayout()
-        export_layout.setSpacing(5)
-        export_label = QLabel("Animation:")
-        export_label.setAlignment(Qt.AlignCenter)
-        export_layout.addWidget(export_label)
-        self.export_button = QPushButton("Save to File")
-        self.export_button.setEnabled(False)
-        self.export_button.clicked.connect(self.export_animation)
-        self.export_button.setMinimumWidth(100)
-        export_layout.addWidget(self.export_button)
-        animation_settings_layout.addLayout(export_layout)
+        # Add spacer between sections
+        animation_settings_layout.addSpacing(20)
         
-        # Second row: Display options
-        display_options_group = QGroupBox("Display Options")
-        display_options_layout = QHBoxLayout(display_options_group)
-        display_options_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
-        
-        # Eye tracking display options
+        # Middle: Eye tracking options
         eye_options_layout = QVBoxLayout()
         eye_options_layout.setSpacing(8)
         eye_options_label = QLabel("Eye Tracking:")
@@ -223,13 +209,27 @@ class AnimatedScanpathWidget(QWidget):
         self.show_right_cb.toggled.connect(self.redraw)
         eye_options_layout.addWidget(self.show_right_cb)
         
-        # Add eye options to display options layout with stretch
-        display_options_layout.addLayout(eye_options_layout)
-        display_options_layout.addStretch(1)  # Add stretching space
+        # Add eye options to animation settings layout
+        animation_settings_layout.addLayout(eye_options_layout)
         
-        # Add both groups to main settings layout
+        # Add spacer before export button
+        animation_settings_layout.addSpacing(20)
+        
+        # Right side: Export button
+        export_layout = QVBoxLayout()
+        export_layout.setSpacing(5)
+        export_label = QLabel("Animation:")
+        export_label.setAlignment(Qt.AlignCenter)
+        export_layout.addWidget(export_label)
+        self.export_button = QPushButton("Save to File")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self.export_animation)
+        self.export_button.setMinimumWidth(100)
+        export_layout.addWidget(self.export_button)
+        animation_settings_layout.addLayout(export_layout)
+        
+        # Add animation controls to main settings layout
         settings_main_layout.addWidget(animation_settings_group)
-        settings_main_layout.addWidget(display_options_group)
         
         # Add settings container to main layout
         layout.addWidget(settings_container)

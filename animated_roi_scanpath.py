@@ -100,10 +100,14 @@ class AnimatedROIScanpathWidget(QWidget):
         settings_main_layout = QVBoxLayout(settings_container)
         settings_main_layout.setSpacing(10)  # Add spacing between groups
         
-        # First row: Animation controls and eye display options
+        # Animation controls with eye tracking options
         animation_settings_group = QGroupBox("Animation Controls")
         animation_settings_layout = QHBoxLayout(animation_settings_group)
         animation_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
+        
+        # Left side: Playback controls
+        playback_controls_layout = QVBoxLayout()
+        playback_controls_layout.setSpacing(10)
         
         # Playback speed controls
         speed_layout = QVBoxLayout()
@@ -117,10 +121,7 @@ class AnimatedROIScanpathWidget(QWidget):
         self.speed_combo.currentTextChanged.connect(self.update_playback_speed)
         self.speed_combo.setMinimumWidth(100)
         speed_layout.addWidget(self.speed_combo)
-        animation_settings_layout.addLayout(speed_layout)
-        
-        # Add spacer between sections
-        animation_settings_layout.addSpacing(15)
+        playback_controls_layout.addLayout(speed_layout)
         
         # Trail length controls
         trail_layout = QVBoxLayout()
@@ -135,12 +136,39 @@ class AnimatedROIScanpathWidget(QWidget):
         self.trail_spin.valueChanged.connect(self.update_trail_length)
         self.trail_spin.setMinimumWidth(100)
         trail_layout.addWidget(self.trail_spin)
-        animation_settings_layout.addLayout(trail_layout)
+        playback_controls_layout.addLayout(trail_layout)
         
-        # Add third spacer
+        # Add playback controls to the main layout
+        animation_settings_layout.addLayout(playback_controls_layout)
+        
+        # Add spacer between sections
+        animation_settings_layout.addSpacing(20)
+        
+        # Middle: Eye tracking options
+        eye_options_layout = QVBoxLayout()
+        eye_options_layout.setSpacing(8)
+        eye_options_label = QLabel("Eye Tracking:")
+        eye_options_label.setAlignment(Qt.AlignCenter)
+        eye_options_label.setStyleSheet("font-weight: bold;")
+        eye_options_layout.addWidget(eye_options_label)
+        
+        self.show_left_cb = QCheckBox("Show Left Eye")
+        self.show_left_cb.setChecked(True)
+        self.show_left_cb.toggled.connect(self.redraw)
+        eye_options_layout.addWidget(self.show_left_cb)
+        
+        self.show_right_cb = QCheckBox("Show Right Eye")
+        self.show_right_cb.setChecked(True)
+        self.show_right_cb.toggled.connect(self.redraw)
+        eye_options_layout.addWidget(self.show_right_cb)
+        
+        # Add eye options to animation settings layout
+        animation_settings_layout.addLayout(eye_options_layout)
+        
+        # Add stretch to push controls to the left
         animation_settings_layout.addStretch(1)
         
-        # Second row: ROI display options
+        # ROI Display Options section (second row)
         roi_settings_group = QGroupBox("ROI Display Options")
         roi_settings_layout = QVBoxLayout(roi_settings_group)
         roi_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
@@ -162,17 +190,17 @@ class AnimatedROIScanpathWidget(QWidget):
         # Add spacing between file selection and checkboxes
         roi_settings_layout.addSpacing(10)
         
-        # Create horizontal layout for checkboxes
+        # ROI options in a horizontal layout with three sections
         roi_options_container = QWidget()
         roi_options_layout = QHBoxLayout(roi_options_container)
         roi_options_layout.setContentsMargins(0, 0, 0, 0)
         roi_options_layout.setSpacing(20)  # Space between sections
         
-        # Left column - ROI visibility options
+        # Left section: ROI visibility options
         roi_visibility_layout = QVBoxLayout()
         roi_visibility_layout.setSpacing(8)
         
-        roi_visibility_label = QLabel("ROI Visibility:")
+        roi_visibility_label = QLabel("Visibility Options:")
         roi_visibility_label.setStyleSheet("font-weight: bold;")
         roi_visibility_layout.addWidget(roi_visibility_label)
         
@@ -186,29 +214,7 @@ class AnimatedROIScanpathWidget(QWidget):
         self.show_roi_labels_cb.toggled.connect(self.toggle_roi_labels)
         roi_visibility_layout.addWidget(self.show_roi_labels_cb)
         
-        roi_options_layout.addLayout(roi_visibility_layout)
-        
-        # Right column - Eye tracking display options
-        eye_options_layout = QVBoxLayout()
-        eye_options_layout.setSpacing(8)
-        
-        eye_options_label = QLabel("Eye Tracking:")
-        eye_options_label.setStyleSheet("font-weight: bold;")
-        eye_options_layout.addWidget(eye_options_label)
-        
-        self.show_left_cb = QCheckBox("Show Left Eye")
-        self.show_left_cb.setChecked(True)
-        self.show_left_cb.toggled.connect(self.redraw)
-        eye_options_layout.addWidget(self.show_left_cb)
-        
-        self.show_right_cb = QCheckBox("Show Right Eye")
-        self.show_right_cb.setChecked(True)
-        self.show_right_cb.toggled.connect(self.redraw)
-        eye_options_layout.addWidget(self.show_right_cb)
-        
-        roi_options_layout.addLayout(eye_options_layout)
-        
-        # Highlighting options
+        # Center section: Highlighting options
         highlight_options_layout = QVBoxLayout()
         highlight_options_layout.setSpacing(8)
         
@@ -221,7 +227,10 @@ class AnimatedROIScanpathWidget(QWidget):
         self.highlight_active_roi_cb.toggled.connect(self.toggle_roi_highlight)
         highlight_options_layout.addWidget(self.highlight_active_roi_cb)
         
+        # Add layouts to the ROI options container
+        roi_options_layout.addLayout(roi_visibility_layout)
         roi_options_layout.addLayout(highlight_options_layout)
+        roi_options_layout.addStretch(1)  # Add stretch to push controls to the left
         
         # Add the options container to the main ROI layout
         roi_settings_layout.addWidget(roi_options_container)
