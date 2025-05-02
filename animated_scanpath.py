@@ -149,60 +149,24 @@ class AnimatedScanpathWidget(QWidget):
         
         # Animation controls with eye display options
         animation_settings_group = QGroupBox("Animation Controls")
-        animation_settings_group.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid #6c8ebf;
-                border-radius: 8px;
-                margin-top: 10px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-                color: #1a5fb4;
-            }
-        """)
         animation_settings_layout = QHBoxLayout(animation_settings_group)
-        animation_settings_layout.setContentsMargins(15, 20, 15, 15)  # Add generous padding
+        animation_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
         
-        # Left side: Playback controls in a nice frame
-        playback_controls_container = QWidget()
-        playback_controls_container.setStyleSheet("""
-            background-color: rgba(220, 230, 242, 40);
-            border-radius: 6px;
-            padding: 5px;
-        """)
-        playback_controls_layout = QVBoxLayout(playback_controls_container)
+        # Left side: Playback controls
+        playback_controls_layout = QVBoxLayout()
         playback_controls_layout.setSpacing(10)
-        playback_controls_layout.setContentsMargins(10, 10, 10, 10)
         
         # Playback speed controls
         speed_layout = QVBoxLayout()
         speed_layout.setSpacing(5)
         speed_label = QLabel("Playback Speed:")
         speed_label.setAlignment(Qt.AlignCenter)
-        speed_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
         speed_layout.addWidget(speed_label)
-        
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentText("1x")
         self.speed_combo.currentTextChanged.connect(self.update_playback_speed)
         self.speed_combo.setMinimumWidth(100)
-        self.speed_combo.setStyleSheet("""
-            QComboBox {
-                border: 1px solid #bdc3c7;
-                border-radius: 3px;
-                padding: 3px;
-                background-color: white;
-            }
-            QComboBox::drop-down {
-                border-left: 1px solid #bdc3c7;
-                width: 20px;
-            }
-        """)
         speed_layout.addWidget(self.speed_combo)
         playback_controls_layout.addLayout(speed_layout)
         
@@ -211,135 +175,58 @@ class AnimatedScanpathWidget(QWidget):
         trail_layout.setSpacing(5)
         trail_label = QLabel("Trail Length:")
         trail_label.setAlignment(Qt.AlignCenter)
-        trail_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
         trail_layout.addWidget(trail_label)
-        
         self.trail_spin = QSpinBox()
         self.trail_spin.setRange(10, 500)
         self.trail_spin.setValue(100)
         self.trail_spin.setSingleStep(10)
         self.trail_spin.valueChanged.connect(self.update_trail_length)
         self.trail_spin.setMinimumWidth(100)
-        self.trail_spin.setStyleSheet("""
-            QSpinBox {
-                border: 1px solid #bdc3c7;
-                border-radius: 3px;
-                padding: 3px;
-                background-color: white;
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                width: 16px;
-                border-left: 1px solid #bdc3c7;
-            }
-        """)
         trail_layout.addWidget(self.trail_spin)
         playback_controls_layout.addLayout(trail_layout)
         
         # Add playback controls to the main layout
-        animation_settings_layout.addWidget(playback_controls_container)
+        animation_settings_layout.addLayout(playback_controls_layout)
         
         # Add spacer between sections
         animation_settings_layout.addSpacing(20)
         
-        # Middle: Eye tracking options in a nice frame
-        eye_options_container = QWidget()
-        eye_options_container.setStyleSheet("""
-            background-color: rgba(230, 236, 242, 40);
-            border-radius: 6px;
-            padding: 5px;
-        """)
-        eye_options_main_layout = QVBoxLayout(eye_options_container)
-        eye_options_main_layout.setContentsMargins(10, 10, 10, 10)
-        
+        # Middle: Eye tracking options
+        eye_options_layout = QVBoxLayout()
+        eye_options_layout.setSpacing(8)
         eye_options_label = QLabel("Eye Tracking:")
         eye_options_label.setAlignment(Qt.AlignCenter)
-        eye_options_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
-        eye_options_main_layout.addWidget(eye_options_label)
-        
-        # Checkbox styling
-        checkbox_style = """
-            QCheckBox {
-                spacing: 8px;
-                color: #2c3e50;
-            }
-            QCheckBox::indicator {
-                width: 15px;
-                height: 15px;
-            }
-            QCheckBox::indicator:unchecked {
-                border: 1px solid #bdc3c7;
-                background-color: white;
-                border-radius: 3px;
-            }
-            QCheckBox::indicator:checked {
-                border: 1px solid #3498db;
-                background-color: #3498db;
-                border-radius: 3px;
-            }
-        """
+        eye_options_label.setStyleSheet("font-weight: bold;")
+        eye_options_layout.addWidget(eye_options_label)
         
         self.show_left_cb = QCheckBox("Show Left Eye")
         self.show_left_cb.setChecked(True)
         self.show_left_cb.toggled.connect(self.redraw)
-        self.show_left_cb.setStyleSheet(checkbox_style)
-        eye_options_main_layout.addWidget(self.show_left_cb)
+        eye_options_layout.addWidget(self.show_left_cb)
         
         self.show_right_cb = QCheckBox("Show Right Eye")
         self.show_right_cb.setChecked(True)
         self.show_right_cb.toggled.connect(self.redraw)
-        self.show_right_cb.setStyleSheet(checkbox_style)
-        eye_options_main_layout.addWidget(self.show_right_cb)
+        eye_options_layout.addWidget(self.show_right_cb)
         
         # Add eye options to animation settings layout
-        animation_settings_layout.addWidget(eye_options_container)
+        animation_settings_layout.addLayout(eye_options_layout)
         
         # Add spacer before export button
         animation_settings_layout.addSpacing(20)
         
-        # Right side: Export button in a nice frame
-        export_container = QWidget()
-        export_container.setStyleSheet("""
-            background-color: rgba(230, 236, 242, 40);
-            border-radius: 6px;
-            padding: 5px;
-        """)
-        export_layout = QVBoxLayout(export_container)
-        export_layout.setContentsMargins(10, 10, 10, 10)
+        # Right side: Export button
+        export_layout = QVBoxLayout()
         export_layout.setSpacing(5)
-        
         export_label = QLabel("Animation:")
         export_label.setAlignment(Qt.AlignCenter)
-        export_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
         export_layout.addWidget(export_label)
-        
         self.export_button = QPushButton("Save to File")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_animation)
         self.export_button.setMinimumWidth(100)
-        self.export_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #1c6ea4;
-            }
-            QPushButton:disabled {
-                background-color: #bdc3c7;
-                color: #7f8c8d;
-            }
-        """)
         export_layout.addWidget(self.export_button)
-        
-        # Add export button to the main layout
-        animation_settings_layout.addWidget(export_container)
+        animation_settings_layout.addLayout(export_layout)
         
         # Add animation controls to main settings layout
         settings_main_layout.addWidget(animation_settings_group)

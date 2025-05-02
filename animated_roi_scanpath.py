@@ -102,60 +102,24 @@ class AnimatedROIScanpathWidget(QWidget):
         
         # Animation controls with eye tracking options
         animation_settings_group = QGroupBox("Animation Controls")
-        animation_settings_group.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid #6c8ebf;
-                border-radius: 8px;
-                margin-top: 10px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-                color: #1a5fb4;
-            }
-        """)
         animation_settings_layout = QHBoxLayout(animation_settings_group)
-        animation_settings_layout.setContentsMargins(15, 20, 15, 15)  # Add generous padding
+        animation_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
         
-        # Left side: Playback controls in a nice frame
-        playback_controls_container = QWidget()
-        playback_controls_container.setStyleSheet("""
-            background-color: rgba(220, 230, 242, 40);
-            border-radius: 6px;
-            padding: 5px;
-        """)
-        playback_controls_layout = QVBoxLayout(playback_controls_container)
+        # Left side: Playback controls
+        playback_controls_layout = QVBoxLayout()
         playback_controls_layout.setSpacing(10)
-        playback_controls_layout.setContentsMargins(10, 10, 10, 10)
         
         # Playback speed controls
         speed_layout = QVBoxLayout()
         speed_layout.setSpacing(5)
         speed_label = QLabel("Playback Speed:")
         speed_label.setAlignment(Qt.AlignCenter)
-        speed_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
         speed_layout.addWidget(speed_label)
-        
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentText("1x")
         self.speed_combo.currentTextChanged.connect(self.update_playback_speed)
         self.speed_combo.setMinimumWidth(100)
-        self.speed_combo.setStyleSheet("""
-            QComboBox {
-                border: 1px solid #bdc3c7;
-                border-radius: 3px;
-                padding: 3px;
-                background-color: white;
-            }
-            QComboBox::drop-down {
-                border-left: 1px solid #bdc3c7;
-                width: 20px;
-            }
-        """)
         speed_layout.addWidget(self.speed_combo)
         playback_controls_layout.addLayout(speed_layout)
         
@@ -164,216 +128,108 @@ class AnimatedROIScanpathWidget(QWidget):
         trail_layout.setSpacing(5)
         trail_label = QLabel("Trail Length:")
         trail_label.setAlignment(Qt.AlignCenter)
-        trail_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
         trail_layout.addWidget(trail_label)
-        
         self.trail_spin = QSpinBox()
         self.trail_spin.setRange(10, 500)
         self.trail_spin.setValue(100)
         self.trail_spin.setSingleStep(10)
         self.trail_spin.valueChanged.connect(self.update_trail_length)
         self.trail_spin.setMinimumWidth(100)
-        self.trail_spin.setStyleSheet("""
-            QSpinBox {
-                border: 1px solid #bdc3c7;
-                border-radius: 3px;
-                padding: 3px;
-                background-color: white;
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                width: 16px;
-                border-left: 1px solid #bdc3c7;
-            }
-        """)
         trail_layout.addWidget(self.trail_spin)
         playback_controls_layout.addLayout(trail_layout)
         
         # Add playback controls to the main layout
-        animation_settings_layout.addWidget(playback_controls_container)
+        animation_settings_layout.addLayout(playback_controls_layout)
         
         # Add spacer between sections
         animation_settings_layout.addSpacing(20)
         
-        # Middle: Eye tracking options in a nice frame
-        eye_options_container = QWidget()
-        eye_options_container.setStyleSheet("""
-            background-color: rgba(230, 236, 242, 40);
-            border-radius: 6px;
-            padding: 5px;
-        """)
-        eye_options_main_layout = QVBoxLayout(eye_options_container)
-        eye_options_main_layout.setContentsMargins(10, 10, 10, 10)
-        
+        # Middle: Eye tracking options
+        eye_options_layout = QVBoxLayout()
+        eye_options_layout.setSpacing(8)
         eye_options_label = QLabel("Eye Tracking:")
         eye_options_label.setAlignment(Qt.AlignCenter)
-        eye_options_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
-        eye_options_main_layout.addWidget(eye_options_label)
-        
-        # Checkbox styling
-        checkbox_style = """
-            QCheckBox {
-                spacing: 8px;
-                color: #2c3e50;
-            }
-            QCheckBox::indicator {
-                width: 15px;
-                height: 15px;
-            }
-            QCheckBox::indicator:unchecked {
-                border: 1px solid #bdc3c7;
-                background-color: white;
-                border-radius: 3px;
-            }
-            QCheckBox::indicator:checked {
-                border: 1px solid #3498db;
-                background-color: #3498db;
-                border-radius: 3px;
-            }
-        """
+        eye_options_label.setStyleSheet("font-weight: bold;")
+        eye_options_layout.addWidget(eye_options_label)
         
         self.show_left_cb = QCheckBox("Show Left Eye")
         self.show_left_cb.setChecked(True)
         self.show_left_cb.toggled.connect(self.redraw)
-        self.show_left_cb.setStyleSheet(checkbox_style)
-        eye_options_main_layout.addWidget(self.show_left_cb)
+        eye_options_layout.addWidget(self.show_left_cb)
         
         self.show_right_cb = QCheckBox("Show Right Eye")
         self.show_right_cb.setChecked(True)
         self.show_right_cb.toggled.connect(self.redraw)
-        self.show_right_cb.setStyleSheet(checkbox_style)
-        eye_options_main_layout.addWidget(self.show_right_cb)
+        eye_options_layout.addWidget(self.show_right_cb)
         
         # Add eye options to animation settings layout
-        animation_settings_layout.addWidget(eye_options_container)
+        animation_settings_layout.addLayout(eye_options_layout)
         
         # Add stretch to push controls to the left
         animation_settings_layout.addStretch(1)
         
         # ROI Display Options section (second row)
         roi_settings_group = QGroupBox("ROI Display Options")
-        roi_settings_group.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid #d5a06f;
-                border-radius: 8px;
-                margin-top: 10px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-                color: #b7521e;
-            }
-        """)
         roi_settings_layout = QVBoxLayout(roi_settings_group)
-        roi_settings_layout.setContentsMargins(15, 20, 15, 15)  # Add generous padding
+        roi_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
         
-        # ROI file selection in a horizontal layout with nice styling
-        roi_file_container = QWidget()
-        roi_file_container.setStyleSheet("""
-            background-color: rgba(245, 235, 224, 40);
-            border-radius: 6px;
-            padding: 5px;
-        """)
-        roi_file_layout = QHBoxLayout(roi_file_container)
+        # ROI file selection in a horizontal layout
+        roi_file_layout = QHBoxLayout()
         roi_file_layout.setSpacing(10)
-        roi_file_layout.setContentsMargins(10, 10, 10, 10)
         
         self.select_roi_btn = QPushButton("Select ROI File")
         self.select_roi_btn.setMinimumWidth(120)
         self.select_roi_btn.clicked.connect(self.select_roi_file)
-        self.select_roi_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #d5a06f;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #c79057;
-            }
-            QPushButton:pressed {
-                background-color: #b7824a;
-            }
-        """)
         roi_file_layout.addWidget(self.select_roi_btn)
         
         self.roi_file_label = QLabel("No ROI file selected")
-        self.roi_file_label.setStyleSheet("""
-            padding: 5px;
-            background-color: rgba(255, 255, 255, 80);
-            border: 1px solid #e0e0e0;
-            border-radius: 3px;
-            color: #555;
-        """)
+        self.roi_file_label.setStyleSheet("padding: 5px; background-color: rgba(240, 240, 240, 50); border-radius: 3px;")
         roi_file_layout.addWidget(self.roi_file_label, 1)
-        roi_settings_layout.addWidget(roi_file_container)
+        roi_settings_layout.addLayout(roi_file_layout)
         
         # Add spacing between file selection and checkboxes
         roi_settings_layout.addSpacing(10)
         
-        # ROI options in a horizontal layout with styled sections
+        # ROI options in a horizontal layout with three sections
         roi_options_container = QWidget()
         roi_options_layout = QHBoxLayout(roi_options_container)
         roi_options_layout.setContentsMargins(0, 0, 0, 0)
-        roi_options_layout.setSpacing(30)  # More space between sections
+        roi_options_layout.setSpacing(20)  # Space between sections
         
         # Left section: ROI visibility options
-        roi_visibility_container = QWidget()
-        roi_visibility_container.setStyleSheet("""
-            background-color: rgba(245, 235, 224, 40);
-            border-radius: 6px;
-            padding: 5px;
-        """)
-        roi_visibility_layout = QVBoxLayout(roi_visibility_container)
-        roi_visibility_layout.setContentsMargins(10, 10, 10, 10)
+        roi_visibility_layout = QVBoxLayout()
         roi_visibility_layout.setSpacing(8)
         
         roi_visibility_label = QLabel("Visibility Options:")
-        roi_visibility_label.setStyleSheet("font-weight: bold; color: #b7521e;")
-        roi_visibility_label.setAlignment(Qt.AlignCenter)
+        roi_visibility_label.setStyleSheet("font-weight: bold;")
         roi_visibility_layout.addWidget(roi_visibility_label)
         
         self.show_rois_cb = QCheckBox("Show ROIs")
         self.show_rois_cb.setChecked(True)
         self.show_rois_cb.toggled.connect(self.toggle_roi_display)
-        self.show_rois_cb.setStyleSheet(checkbox_style.replace("#3498db", "#d5a06f"))
         roi_visibility_layout.addWidget(self.show_rois_cb)
         
         self.show_roi_labels_cb = QCheckBox("Show ROI Labels")
         self.show_roi_labels_cb.setChecked(True)
         self.show_roi_labels_cb.toggled.connect(self.toggle_roi_labels)
-        self.show_roi_labels_cb.setStyleSheet(checkbox_style.replace("#3498db", "#d5a06f"))
         roi_visibility_layout.addWidget(self.show_roi_labels_cb)
         
         # Center section: Highlighting options
-        highlight_options_container = QWidget()
-        highlight_options_container.setStyleSheet("""
-            background-color: rgba(245, 235, 224, 40);
-            border-radius: 6px;
-            padding: 5px;
-        """)
-        highlight_options_layout = QVBoxLayout(highlight_options_container)
-        highlight_options_layout.setContentsMargins(10, 10, 10, 10)
+        highlight_options_layout = QVBoxLayout()
         highlight_options_layout.setSpacing(8)
         
         highlight_options_label = QLabel("Highlighting:")
-        highlight_options_label.setStyleSheet("font-weight: bold; color: #b7521e;")
-        highlight_options_label.setAlignment(Qt.AlignCenter)
+        highlight_options_label.setStyleSheet("font-weight: bold;")
         highlight_options_layout.addWidget(highlight_options_label)
         
         self.highlight_active_roi_cb = QCheckBox("Highlight Active ROI")
         self.highlight_active_roi_cb.setChecked(True)
         self.highlight_active_roi_cb.toggled.connect(self.toggle_roi_highlight)
-        self.highlight_active_roi_cb.setStyleSheet(checkbox_style.replace("#3498db", "#d5a06f"))
         highlight_options_layout.addWidget(self.highlight_active_roi_cb)
         
         # Add layouts to the ROI options container
-        roi_options_layout.addWidget(roi_visibility_container)
-        roi_options_layout.addWidget(highlight_options_container)
+        roi_options_layout.addLayout(roi_visibility_layout)
+        roi_options_layout.addLayout(highlight_options_layout)
         roi_options_layout.addStretch(1)  # Add stretch to push controls to the left
         
         # Add the options container to the main ROI layout
