@@ -145,23 +145,39 @@ class AnimatedScanpathWidget(QWidget):
         # Settings section with proper organization
         settings_container = QWidget()
         settings_main_layout = QVBoxLayout(settings_container)
-        settings_main_layout.setSpacing(10)  # Add spacing between groups
+        settings_main_layout.setSpacing(15)  # Increase spacing between groups
+        settings_main_layout.setContentsMargins(10, 10, 10, 10)  # Add container margins
         
-        # Animation controls with eye display options
+        # Animation controls with eye tracking options
         animation_settings_group = QGroupBox("Animation Controls")
+        animation_settings_group.setMinimumHeight(150)  # Ensure minimum height for better appearance
         animation_settings_layout = QHBoxLayout(animation_settings_group)
-        animation_settings_layout.setContentsMargins(10, 15, 10, 15)  # Add padding
+        animation_settings_layout.setContentsMargins(15, 25, 15, 15)  # Increase padding
+        animation_settings_layout.setSpacing(25)  # Increase spacing between elements
         
-        # Left side: Playback controls
-        playback_controls_layout = QVBoxLayout()
-        playback_controls_layout.setSpacing(10)
+        # Create a container for playback controls to align them nicely
+        playback_section = QWidget()
+        playback_section_layout = QVBoxLayout(playback_section)
+        playback_section_layout.setContentsMargins(5, 0, 5, 0)
+        playback_section_layout.setSpacing(15)  # Increase vertical spacing
+        
+        # Add a header for this section
+        playback_header = QLabel("Playback Settings")
+        playback_header.setAlignment(Qt.AlignCenter)
+        playback_header.setStyleSheet("font-weight: bold;")
+        playback_section_layout.addWidget(playback_header)
+        
+        # Create horizontal layout for playback controls
+        playback_controls_layout = QHBoxLayout()
+        playback_controls_layout.setSpacing(20)  # Space between speed and trail controls
         
         # Playback speed controls
         speed_layout = QVBoxLayout()
-        speed_layout.setSpacing(5)
+        speed_layout.setSpacing(8)  # Increase spacing
         speed_label = QLabel("Playback Speed:")
         speed_label.setAlignment(Qt.AlignCenter)
         speed_layout.addWidget(speed_label)
+        
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentText("1x")
@@ -172,10 +188,11 @@ class AnimatedScanpathWidget(QWidget):
         
         # Trail length controls
         trail_layout = QVBoxLayout()
-        trail_layout.setSpacing(5)
+        trail_layout.setSpacing(8)  # Increase spacing
         trail_label = QLabel("Trail Length:")
         trail_label.setAlignment(Qt.AlignCenter)
         trail_layout.addWidget(trail_label)
+        
         self.trail_spin = QSpinBox()
         self.trail_spin.setRange(10, 500)
         self.trail_spin.setValue(100)
@@ -185,48 +202,84 @@ class AnimatedScanpathWidget(QWidget):
         trail_layout.addWidget(self.trail_spin)
         playback_controls_layout.addLayout(trail_layout)
         
-        # Add playback controls to the main layout
-        animation_settings_layout.addLayout(playback_controls_layout)
+        # Add the horizontal playback controls to the playback section
+        playback_section_layout.addLayout(playback_controls_layout)
         
-        # Add spacer between sections
-        animation_settings_layout.addSpacing(20)
+        # Add the playback section to the main layout
+        animation_settings_layout.addWidget(playback_section, 1)
         
-        # Middle: Eye tracking options
-        eye_options_layout = QVBoxLayout()
-        eye_options_layout.setSpacing(8)
-        eye_options_label = QLabel("Eye Tracking:")
-        eye_options_label.setAlignment(Qt.AlignCenter)
-        eye_options_label.setStyleSheet("font-weight: bold;")
-        eye_options_layout.addWidget(eye_options_label)
+        # Add a vertical separator line
+        separator = QWidget()
+        separator.setFixedWidth(1)
+        separator.setStyleSheet("background-color: #d0d0d0;")  # Light gray line
+        animation_settings_layout.addWidget(separator)
+        
+        # Create a container for eye tracking options to align them nicely
+        eye_tracking_section = QWidget()
+        eye_tracking_layout = QVBoxLayout(eye_tracking_section)
+        eye_tracking_layout.setContentsMargins(5, 0, 5, 0)
+        eye_tracking_layout.setSpacing(8)
+        
+        # Add a header for this section
+        eye_tracking_header = QLabel("Eye Tracking Display")
+        eye_tracking_header.setAlignment(Qt.AlignCenter)
+        eye_tracking_header.setStyleSheet("font-weight: bold;")
+        eye_tracking_layout.addWidget(eye_tracking_header)
+        
+        # Add checkboxes with better spacing
+        checkbox_container = QWidget()
+        checkbox_layout = QVBoxLayout(checkbox_container)
+        checkbox_layout.setSpacing(10)  # Increase spacing between checkboxes
         
         self.show_left_cb = QCheckBox("Show Left Eye")
         self.show_left_cb.setChecked(True)
         self.show_left_cb.toggled.connect(self.redraw)
-        eye_options_layout.addWidget(self.show_left_cb)
+        checkbox_layout.addWidget(self.show_left_cb)
         
         self.show_right_cb = QCheckBox("Show Right Eye")
         self.show_right_cb.setChecked(True)
         self.show_right_cb.toggled.connect(self.redraw)
-        eye_options_layout.addWidget(self.show_right_cb)
+        checkbox_layout.addWidget(self.show_right_cb)
         
-        # Add eye options to animation settings layout
-        animation_settings_layout.addLayout(eye_options_layout)
+        # Add some padding at the bottom for alignment
+        checkbox_layout.addStretch(1)
         
-        # Add spacer before export button
-        animation_settings_layout.addSpacing(20)
+        # Add the checkbox container to the eye tracking section
+        eye_tracking_layout.addWidget(checkbox_container)
         
-        # Right side: Export button
-        export_layout = QVBoxLayout()
-        export_layout.setSpacing(5)
-        export_label = QLabel("Animation:")
-        export_label.setAlignment(Qt.AlignCenter)
-        export_layout.addWidget(export_label)
+        # Add the eye tracking section to the main layout
+        animation_settings_layout.addWidget(eye_tracking_section, 1)
+        
+        # Add a vertical separator line
+        separator2 = QWidget()
+        separator2.setFixedWidth(1)
+        separator2.setStyleSheet("background-color: #d0d0d0;")  # Light gray line
+        animation_settings_layout.addWidget(separator2)
+        
+        # Create a container for export options
+        export_section = QWidget()
+        export_layout = QVBoxLayout(export_section)
+        export_layout.setContentsMargins(5, 0, 5, 0)
+        export_layout.setSpacing(8)
+        
+        # Add a header for this section
+        export_header = QLabel("Animation Export")
+        export_header.setAlignment(Qt.AlignCenter)
+        export_header.setStyleSheet("font-weight: bold;")
+        export_layout.addWidget(export_header)
+        
+        # Add export button
         self.export_button = QPushButton("Save to File")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_animation)
         self.export_button.setMinimumWidth(100)
         export_layout.addWidget(self.export_button)
-        animation_settings_layout.addLayout(export_layout)
+        
+        # Add some padding at the bottom for alignment
+        export_layout.addStretch(1)
+        
+        # Add the export section to the main layout
+        animation_settings_layout.addWidget(export_section)
         
         # Add animation controls to main settings layout
         settings_main_layout.addWidget(animation_settings_group)
