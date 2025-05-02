@@ -10,6 +10,8 @@ __pycache__/
 # Exception for test ASC files
 !tests/asc_files/*.asc
 
+roi_data.json
+
 # Virtual environment
 .venv/
 env/
@@ -35,3 +37,4 @@ venv/
 
 /eye_tracking_data/*
 !/eye_tracking_data/.gitkeep
+**/.claude/settings.local.json
