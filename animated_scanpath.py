@@ -34,6 +34,9 @@ class AnimatedScanpathWidget(QWidget):
         self.playback_speed = 1.0  # Initialize playback_speed
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_animation)
+        
+        # Store loaded movies data
+        self.loaded_movies = {}  # Dictionary to store loaded movie data: {movie_name: data_dict}
 
         # For keeping track of real time
         self.last_update_time = None
@@ -57,7 +60,45 @@ class AnimatedScanpathWidget(QWidget):
             self.status_label.setText("Error: Empty data")
             return False
 
-        # Store data and settings
+        # Check for required columns
+        required_cols = ['timestamp', 'x_left', 'y_left', 'x_right', 'y_right']
+        missing_cols = [col for col in required_cols if col not in data.columns]
+
+        if missing_cols:
+            self.status_label.setText(f"Error: Missing columns: {', '.join(missing_cols)}")
+            return False
+            
+        # Store data in the loaded movies dictionary
+        self.loaded_movies[movie_name] = {
+            'data': data.copy(),
+            'screen_width': screen_width,
+            'screen_height': screen_height
+        }
+        
+        # Update movie selection dropdown
+        current_movie = self.movie_combo.currentText() if self.movie_combo.count() > 0 else None
+        
+        # Block signals to prevent triggering movie_selected while updating
+        self.movie_combo.blockSignals(True)
+        self.movie_combo.clear()
+        self.movie_combo.addItems(sorted(self.loaded_movies.keys()))
+        self.movie_combo.setEnabled(True)
+        
+        # Restore previous selection or select the new movie
+        if current_movie and current_movie in self.loaded_movies:
+            index = self.movie_combo.findText(current_movie)
+            if index >= 0:
+                self.movie_combo.setCurrentIndex(index)
+        else:
+            # Select the newly added movie
+            index = self.movie_combo.findText(movie_name)
+            if index >= 0:
+                self.movie_combo.setCurrentIndex(index)
+        
+        # Unblock signals
+        self.movie_combo.blockSignals(False)
+
+        # Store data and settings for immediate use
         self.data = data
         self.movie_name = movie_name
         self.screen_width = screen_width
@@ -67,14 +108,6 @@ class AnimatedScanpathWidget(QWidget):
         self.is_playing = False
         self.current_frame = 0
         self.last_update_time = None
-
-        # Check for required columns
-        required_cols = ['timestamp', 'x_left', 'y_left', 'x_right', 'y_right']
-        missing_cols = [col for col in required_cols if col not in data.columns]
-
-        if missing_cols:
-            self.status_label.setText(f"Error: Missing columns: {', '.join(missing_cols)}")
-            return False
 
         # Calculate relative time in seconds for better display
         self.data['time_sec'] = (self.data['timestamp'] - self.data['timestamp'].iloc[0]) / 1000.0
@@ -147,6 +180,23 @@ class AnimatedScanpathWidget(QWidget):
         settings_main_layout = QVBoxLayout(settings_container)
         settings_main_layout.setSpacing(15)  # Increase spacing between groups
         settings_main_layout.setContentsMargins(10, 10, 10, 10)  # Add container margins
+        
+        # Movie selection section
+        movie_selection_container = QWidget()
+        movie_selection_layout = QHBoxLayout(movie_selection_container)
+        movie_selection_layout.setContentsMargins(5, 5, 5, 5)
+        movie_selection_layout.setSpacing(10)
+        
+        # Movie selection dropdown
+        movie_selection_layout.addWidget(QLabel("Select Movie:"))
+        self.movie_combo = QComboBox()
+        self.movie_combo.setEnabled(False)
+        self.movie_combo.currentIndexChanged.connect(self.movie_selected)
+        self.movie_combo.setMinimumWidth(200)
+        movie_selection_layout.addWidget(self.movie_combo, 1)
+        
+        # Add the movie selection section to the main layout
+        settings_main_layout.addWidget(movie_selection_container)
         
         # Animation controls with eye tracking options
         animation_settings_group = QGroupBox("Animation Controls")
@@ -485,6 +535,76 @@ class AnimatedScanpathWidget(QWidget):
         else:
             self.playback_speed = 1.0
 
+    def _normalize_coordinates(self):
+        """Normalize eye coordinates if they are in pixel values."""
+        if self.data is None:
+            return
+            
+        # We don't need normalization in this widget as it uses pixel values directly
+        # But we keep this method for consistency with ROI version
+        pass
+        
+    def movie_selected(self, index):
+        """Handle movie selection and load the selected movie data."""
+        if index < 0 or self.movie_combo.count() == 0:
+            return
+        
+        movie_name = self.movie_combo.currentText()
+        
+        # Check if we have data for this movie
+        if movie_name in self.loaded_movies:
+            movie_data = self.loaded_movies[movie_name]
+            
+            # Load the data for this movie
+            self.status_label.setText(f"Loading data for movie: {movie_name}...")
+            
+            # Get the data
+            data = movie_data['data']
+            screen_width = movie_data.get('screen_width', 1280)
+            screen_height = movie_data.get('screen_height', 1024)
+            
+            # Reset animation to initial state
+            self.is_playing = False
+            self.current_frame = 0
+            self.last_update_time = None
+            
+            # Store data and settings
+            self.data = data
+            self.movie_name = movie_name
+            self.screen_width = screen_width
+            self.screen_height = screen_height
+            
+            # Update UI with loaded data
+            # Calculate relative time in seconds for better display
+            self.data['time_sec'] = (self.data['timestamp'] - self.data['timestamp'].iloc[0]) / 1000.0
+            self.total_duration = self.data['time_sec'].iloc[-1]
+            
+            # Set up timeline slider
+            self.timeline_slider.setMinimum(0)
+            self.timeline_slider.setMaximum(len(self.data) - 1)
+            self.timeline_slider.setValue(0)
+            
+            # Update time label
+            self.time_label.setText(f"0.0s / {self.total_duration:.1f}s")
+            
+            # Enable controls
+            self.play_button.setEnabled(True)
+            self.reset_button.setEnabled(True)
+            self.timeline_slider.setEnabled(True)
+            self.export_button.setEnabled(True)
+            
+            # Initialize the plot with the loaded data
+            self.redraw()
+            
+            # Update status
+            self.status_label.setText(f"Loaded {len(self.data)} samples from {movie_name} "
+                                    f"({self.total_duration:.1f} seconds)")
+            
+            return True
+        else:
+            self.status_label.setText(f"No data available for movie: {movie_name}")
+            return False
+    
     def update_trail_length(self):
         """Update the trail length setting and redraw."""
         self.redraw()

@@ -37,6 +37,9 @@ class AnimatedROIScanpathWidget(QWidget):
         self.timer.timeout.connect(self.update_animation)
         self.current_roi = None  # Current ROI that gaze is in
         self.active_roi_id = None  # ID of ROI currently being gazed at
+        
+        # Store loaded movies data
+        self.loaded_movies = {}  # Dictionary to store loaded movie data: {movie_name: data_dict}
 
         # Display options
         self.show_rois = True
@@ -100,6 +103,23 @@ class AnimatedROIScanpathWidget(QWidget):
         settings_main_layout = QVBoxLayout(settings_container)
         settings_main_layout.setSpacing(15)  # Increase spacing between groups
         settings_main_layout.setContentsMargins(10, 10, 10, 10)  # Add container margins
+        
+        # Movie selection section
+        movie_selection_container = QWidget()
+        movie_selection_layout = QHBoxLayout(movie_selection_container)
+        movie_selection_layout.setContentsMargins(5, 5, 5, 5)
+        movie_selection_layout.setSpacing(10)
+        
+        # Movie selection dropdown
+        movie_selection_layout.addWidget(QLabel("Select Movie:"))
+        self.movie_combo = QComboBox()
+        self.movie_combo.setEnabled(False)
+        self.movie_combo.currentIndexChanged.connect(self.movie_selected)
+        self.movie_combo.setMinimumWidth(200)
+        movie_selection_layout.addWidget(self.movie_combo, 1)
+        
+        # Add the movie selection section to the main layout
+        settings_main_layout.addWidget(movie_selection_container)
         
         # Animation controls with eye tracking options
         animation_settings_group = QGroupBox("Animation Controls")
@@ -401,6 +421,141 @@ class AnimatedROIScanpathWidget(QWidget):
                 self.status_label.setText(f"Failed to load ROI data from {roi_file}")
                 self.roi_file_label.setText("No ROI file selected")
 
+    def movie_selected(self, index):
+        """Handle movie selection and load the selected movie data."""
+        if index < 0 or self.movie_combo.count() == 0:
+            return
+        
+        movie_name = self.movie_combo.currentText()
+        
+        # Check if we have data for this movie
+        if movie_name in self.loaded_movies:
+            movie_data = self.loaded_movies[movie_name]
+            
+            # Load the data for this movie
+            self.status_label.setText(f"Loading data for movie: {movie_name}...")
+            
+            # Get the data and ROI path
+            eye_data = movie_data['data']
+            roi_path = movie_data.get('roi_path', None)
+            screen_width = movie_data.get('screen_width', 1280)
+            screen_height = movie_data.get('screen_height', 1024)
+            
+            # Reset animation to initial state
+            self.is_playing = False
+            self.current_frame = 0
+            self.last_update_time = None
+            self.roi_dwell_times = {}
+            self.current_roi_start_time = None
+            self.active_roi_id = None
+            
+            # Store data and settings
+            self.data = eye_data
+            self.movie_name = movie_name
+            self.screen_width = screen_width
+            self.screen_height = screen_height
+            
+            # Load ROI data if available
+            if roi_path and os.path.exists(roi_path):
+                success = self.roi_manager.load_roi_file(roi_path)
+                if success:
+                    self.roi_file_label.setText(f"ROI File: {os.path.basename(roi_path)}")
+                    self.show_rois = True
+                    self.show_rois_cb.setChecked(True)
+                else:
+                    self.status_label.setText(f"Warning: Failed to load ROI data from {roi_path}")
+                    self.roi_file_label.setText("No ROI file selected")
+            
+            # Update UI with loaded data
+            # Calculate relative time in seconds for better display
+            self.data['time_sec'] = (self.data['timestamp'] - self.data['timestamp'].iloc[0]) / 1000.0
+            self.total_duration = self.data['time_sec'].iloc[-1]
+            
+            # Set up timeline slider
+            self.timeline_slider.setMinimum(0)
+            self.timeline_slider.setMaximum(len(self.data) - 1)
+            self.timeline_slider.setValue(0)
+            
+            # Update time label
+            self.time_label.setText(f"0.0s / {self.total_duration:.1f}s")
+            
+            # Enable controls
+            self.play_button.setEnabled(True)
+            self.reset_button.setEnabled(True)
+            self.timeline_slider.setEnabled(True)
+            
+            # Try to normalize coordinates and ensure they exist
+            try:
+                # Check if we need to normalize
+                if ('x_left_norm' not in self.data.columns or 
+                    'y_left_norm' not in self.data.columns or
+                    'x_right_norm' not in self.data.columns or
+                    'y_right_norm' not in self.data.columns):
+                    # Force normalization
+                    self.data['x_left_norm'] = self.data['x_left'] / self.screen_width
+                    self.data['y_left_norm'] = self.data['y_left'] / self.screen_height
+                    self.data['x_right_norm'] = self.data['x_right'] / self.screen_width
+                    self.data['y_right_norm'] = self.data['y_right'] / self.screen_height
+                    print(f"Created normalization columns for movie: {movie_name}")
+            except Exception as e:
+                print(f"Error normalizing coordinates: {str(e)}")
+                # Emergency fallback - create normalized columns from raw coordinates
+                if 'x_left' in self.data.columns:
+                    self.data['x_left_norm'] = self.data['x_left'] / self.screen_width
+                    self.data['y_left_norm'] = self.data['y_left'] / self.screen_height
+                    self.data['x_right_norm'] = self.data['x_right'] / self.screen_width
+                    self.data['y_right_norm'] = self.data['y_right'] / self.screen_height
+            
+            # Initialize the plot with the loaded data
+            self.redraw()
+            
+            # Update status
+            self.status_label.setText(f"Loaded {len(self.data)} samples from {movie_name} "
+                                    f"({self.total_duration:.1f} seconds)")
+            
+            return True
+        else:
+            self.status_label.setText(f"No data available for movie: {movie_name}")
+            return False
+    
+    def _normalize_coordinates(self):
+        """Normalize eye coordinates if they are in pixel values."""
+        if self.data is None:
+            return
+        
+        # First check if the normalization columns already exist
+        if ('x_left_norm' in self.data.columns and 
+            'y_left_norm' in self.data.columns and 
+            'x_right_norm' in self.data.columns and 
+            'y_right_norm' in self.data.columns):
+            return
+            
+        # Add normalized columns if they don't exist
+        try:    
+            # Check if normalization is needed
+            max_x = max(self.data['x_left'].max(), self.data['x_right'].max())
+            max_y = max(self.data['y_left'].max(), self.data['y_right'].max())
+            
+            if max_x > 1.0 or max_y > 1.0:
+                # Normalize to [0, 1] range
+                self.data['x_left_norm'] = self.data['x_left'] / self.screen_width
+                self.data['y_left_norm'] = self.data['y_left'] / self.screen_height
+                self.data['x_right_norm'] = self.data['x_right'] / self.screen_width
+                self.data['y_right_norm'] = self.data['y_right'] / self.screen_height
+            else:
+                # Already normalized
+                self.data['x_left_norm'] = self.data['x_left']
+                self.data['y_left_norm'] = self.data['y_left']
+                self.data['x_right_norm'] = self.data['x_right']
+                self.data['y_right_norm'] = self.data['y_right']
+        except Exception as e:
+            print(f"Error during normalization: {str(e)}")
+            # If normalization fails, create backup columns to prevent errors
+            self.data['x_left_norm'] = self.data['x_left']
+            self.data['y_left_norm'] = self.data['y_left']
+            self.data['x_right_norm'] = self.data['x_right']
+            self.data['y_right_norm'] = self.data['y_right']
+    
     def load_data(self, eye_data: pd.DataFrame, roi_data_path: str = None,
                   movie_name: str = "Unknown", screen_width: int = 1280,
                   screen_height: int = 1024) -> bool:
@@ -429,7 +584,38 @@ class AnimatedROIScanpathWidget(QWidget):
             self.status_label.setText(f"Error: Missing columns: {', '.join(missing_cols)}")
             return False
 
-        # Store data and settings
+        # Store data in the loaded movies dictionary
+        self.loaded_movies[movie_name] = {
+            'data': eye_data.copy(),
+            'roi_path': roi_data_path,
+            'screen_width': screen_width,
+            'screen_height': screen_height
+        }
+        
+        # Update movie selection dropdown
+        current_movie = self.movie_combo.currentText() if self.movie_combo.count() > 0 else None
+        
+        # Block signals to prevent triggering movie_selected while updating
+        self.movie_combo.blockSignals(True)
+        self.movie_combo.clear()
+        self.movie_combo.addItems(sorted(self.loaded_movies.keys()))
+        self.movie_combo.setEnabled(True)
+        
+        # Restore previous selection or select the new movie
+        if current_movie and current_movie in self.loaded_movies:
+            index = self.movie_combo.findText(current_movie)
+            if index >= 0:
+                self.movie_combo.setCurrentIndex(index)
+        else:
+            # Select the newly added movie
+            index = self.movie_combo.findText(movie_name)
+            if index >= 0:
+                self.movie_combo.setCurrentIndex(index)
+        
+        # Unblock signals
+        self.movie_combo.blockSignals(False)
+        
+        # Store data and settings for immediate use
         self.data = eye_data
         self.movie_name = movie_name
         self.screen_width = screen_width
@@ -452,23 +638,8 @@ class AnimatedROIScanpathWidget(QWidget):
         else:
             self.status_label.setText("No ROI file provided. Please select an ROI file to visualize ROIs.")
 
-        # Normalize eye coordinates if necessary
-        max_x = max(self.data['x_left'].max(), self.data['x_right'].max())
-        max_y = max(self.data['y_left'].max(), self.data['y_right'].max())
-
-        if max_x > 1.0 or max_y > 1.0:
-            self.status_label.setText("Normalizing eye coordinates from pixel values...")
-            # Normalize to [0, 1] range
-            self.data['x_left_norm'] = self.data['x_left'] / self.screen_width
-            self.data['y_left_norm'] = self.data['y_left'] / self.screen_height
-            self.data['x_right_norm'] = self.data['x_right'] / self.screen_width
-            self.data['y_right_norm'] = self.data['y_right'] / self.screen_height
-        else:
-            # Already normalized
-            self.data['x_left_norm'] = self.data['x_left']
-            self.data['y_left_norm'] = self.data['y_left']
-            self.data['x_right_norm'] = self.data['x_right']
-            self.data['y_right_norm'] = self.data['y_right']
+        # Normalize eye coordinates
+        self._normalize_coordinates()
 
         # Reset animation state
         self.is_playing = False
@@ -614,6 +785,21 @@ class AnimatedROIScanpathWidget(QWidget):
         """Update the display based on current frame."""
         if self.data is None or self.current_frame >= len(self.data):
             return
+
+        # Make sure normalization columns exist
+        self._normalize_coordinates()
+        
+        # Check if normalization columns exist after attempted normalization
+        if ('x_left_norm' not in self.data.columns or
+            'y_left_norm' not in self.data.columns or
+            'x_right_norm' not in self.data.columns or
+            'y_right_norm' not in self.data.columns):
+            print("Warning: Normalized coordinates are not available. Using raw coordinates.")
+            # Create temporary normalization columns for this visualization
+            self.data['x_left_norm'] = self.data['x_left'] / self.screen_width
+            self.data['y_left_norm'] = self.data['y_left'] / self.screen_height
+            self.data['x_right_norm'] = self.data['x_right'] / self.screen_width
+            self.data['y_right_norm'] = self.data['y_right'] / self.screen_height
 
         # Get trail length
         trail_length = self.trail_length
