@@ -22,6 +22,20 @@ import os
 import time
 from pathlib import Path
 
+# Set offscreen matplotlib backend if we're in CI/GitHub Actions environment
+# This needs to be done before importing matplotlib or any module that uses it
+if 'CI' in os.environ or 'GITHUB_ACTIONS' in os.environ:
+    print("CI environment detected, using 'Agg' backend for matplotlib...")
+    import matplotlib
+    matplotlib.use('Agg')
+    
+    # Set QT_QPA_PLATFORM to 'offscreen' for Qt
+    os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+    print("Set QT_QPA_PLATFORM to 'offscreen'")
+    
+    # This can help with Qt issues in headless environments
+    os.environ['QT_DEBUG_PLUGINS'] = '1'
+
 
 def get_test_modules():
     """Find all test modules in the tests directory."""

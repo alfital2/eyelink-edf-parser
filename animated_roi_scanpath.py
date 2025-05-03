@@ -45,8 +45,7 @@ class AnimatedROIScanpathWidget(QWidget):
         self.show_rois = True
         self.highlight_active_roi = True
         self.show_roi_labels = True
-        self.show_left_eye = True
-        self.show_right_eye = True
+        # These attributes are now controlled by checkboxes directly
         self.trail_length = 100
 
         # For keeping track of real time

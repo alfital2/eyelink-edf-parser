@@ -7,16 +7,15 @@ This module adds animation capabilities to the eye movement scan path visualizat
 allowing users to see the temporal progression of eye movements during movie viewing.
 """
 
-import os
 import numpy as np
-import pandas as pd  # Add pandas import
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QSlider, QLabel, QGroupBox, QSpinBox, QCheckBox,
                              QComboBox, QFileDialog)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer
 
 
 class AnimatedScanpathWidget(QWidget):
@@ -771,19 +770,32 @@ class AnimatedScanpathWidget(QWidget):
 
 
 
+# This function is kept for backward compatibility with tests
 def create_animated_scanpath(data, movie_name, screen_width=1280, screen_height=1024):
     """
-    Create an animated scan path visualization and return the widget.
-
+    Create an animated scanpath visualization widget.
+    
+    This function is kept for backward compatibility with tests.
+    In new code, prefer instantiating the AnimatedScanpathWidget class directly.
+    
     Args:
         data: DataFrame with unified eye metrics
-        movie_name: Name of the movie
-        screen_width: Screen width in pixels
-        screen_height: Screen height in pixels
-
+        movie_name: Name of the movie for display
+        screen_width: Width of the screen in pixels
+        screen_height: Height of the screen in pixels
+        
     Returns:
-        AnimatedScanpathWidget
+        AnimatedScanpathWidget instance with data loaded
     """
+    # Create a new widget
     widget = AnimatedScanpathWidget()
-    widget.load_data(data, movie_name, screen_width, screen_height)
+    
+    # Load the data into the widget
+    widget.load_data(
+        data=data,
+        movie_name=movie_name,
+        screen_width=screen_width,
+        screen_height=screen_height
+    )
+    
     return widget
