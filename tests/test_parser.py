@@ -10,7 +10,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from parser import EyeLinkASCParser, process_asc_file
 
-TEST_FILE_PATH = "asc_files/sample_test.asc"
+TEST_FILE_PATH = os.path.join(os.path.dirname(__file__), "asc_files/sample_test.asc")
 
 class TestEyeLinkASCParser(unittest.TestCase):
     """
@@ -121,7 +121,7 @@ class TestEyeLinkASCParser(unittest.TestCase):
         num_lines = parser.read_file()
 
         # Count the lines in the actual file to compare
-        with open(TEST_FILE_PATH, 'r') as f:
+        with open(os.path.join(os.path.dirname(__file__), "asc_files/sample_test.asc"), 'r') as f:
             actual_lines = len(f.readlines())
 
         self.assertEqual(num_lines, actual_lines,
