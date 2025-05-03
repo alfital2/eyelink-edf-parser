@@ -67,7 +67,7 @@ class MovieEyeTrackingVisualizer:
         movie_folders = []
 
         # Pattern: look for folders with unified_eye_metrics in their files
-        for root, dirs, files in os.walk(self.base_dir):
+        for root, _, files in os.walk(self.base_dir):
             if any("unified_eye_metrics" in f for f in files if f.endswith('.csv')):
                 movie_folders.append(root)
 
@@ -134,6 +134,52 @@ class MovieEyeTrackingVisualizer:
         fig.savefig(full_path, dpi=self.dpi, bbox_inches='tight')
         print(f"Saved plot to {full_path}")
         plt.close(fig)
+        
+    def _validate_plot_data(self, data: pd.DataFrame, required_columns=None, error_message=None):
+        """Common data validation for plotting functions
+        
+        Args:
+            data: DataFrame with eye tracking metrics
+            required_columns: List of required columns
+            error_message: Custom error message if data is invalid
+            
+        Returns:
+            True if data is valid, False otherwise
+        """
+        if data.empty:
+            print(error_message or "Empty dataframe, cannot generate plot.")
+            return False
+            
+        if required_columns:
+            missing_cols = [col for col in required_columns if col not in data.columns]
+            if missing_cols:
+                print(f"Missing required columns: {', '.join(missing_cols)}")
+                return False
+                
+        return True
+        
+    def _create_plot_filename(self, prefix, base_name, **kwargs):
+        """Create standardized filename for plots with consistent naming
+        
+        Args:
+            prefix: Prefix for the filename
+            base_name: Base name of the plot type
+            **kwargs: Additional parts to add to the filename
+            
+        Returns:
+            Formatted filename string
+        """
+        filename = f"{prefix}{base_name}"
+        
+        # Add any additional parts in a consistent order
+        for key, value in sorted(kwargs.items()):
+            if value is not None:
+                if isinstance(value, tuple) and len(value) == 2:
+                    filename += f"_{value[0]}_{value[1]}"
+                else:
+                    filename += f"_{key}_{value}"
+                    
+        return filename
 
     def plot_scanpath(self,
                       data: pd.DataFrame,
@@ -156,8 +202,9 @@ class MovieEyeTrackingVisualizer:
             max_points: Maximum number of points to plot (for performance)
             alpha: Transparency of the points
         """
-        if data.empty:
-            print("Empty dataframe, cannot plot scanpath.")
+        # Validate input data
+        required_columns = ['x_left', 'y_left', 'x_right', 'y_right']
+        if not self._validate_plot_data(data, required_columns, "Empty dataframe, cannot plot scanpath."):
             return
 
         # Apply time window if specified
@@ -227,11 +274,8 @@ class MovieEyeTrackingVisualizer:
         # Add grid
         ax.grid(True, linestyle='--', alpha=0.7)
 
-        # Save the plot
-        filename = f"{prefix}scanpath"
-        if time_window:
-            filename += f"_{time_window[0]}_{time_window[1]}"
-
+        # Create filename and save the plot
+        filename = self._create_plot_filename(prefix, 'scanpath', time_window=time_window)
         self.save_plot(plots_dir, filename, fig)
 
     def generate_animated_scanpath(self,
@@ -242,6 +286,10 @@ class MovieEyeTrackingVisualizer:
                                    fps: int = 30,
                                    trail_length: int = 100,
                                    save_path: str = None):
+        """
+        WARNING: This method appears to be unused in the current codebase.
+        Consider using animated_scanpath.py for animated visualizations.
+        """
         """
         Generate an animated version of the scanpath visualization.
 
@@ -440,14 +488,10 @@ class MovieEyeTrackingVisualizer:
             only_fixations: Whether to use only fixation data or all samples
             frame_range: Optional tuple with (start_frame, end_frame) to plot a specific segment
         """
-        if data.empty:
-            print("Empty dataframe, cannot plot heatmap.")
-            return
-
-        # Filter data based on eye and fixation settings
+        # Validate input data
         x_col, y_col = f'x_{eye}', f'y_{eye}'
-        if x_col not in data.columns or y_col not in data.columns:
-            print(f"Eye position data for {eye} eye not found.")
+        required_columns = [x_col, y_col]
+        if not self._validate_plot_data(data, required_columns, f"Empty dataframe or missing eye position data for {eye} eye."):
             return
 
         # Filter by frame range if specified
@@ -514,12 +558,8 @@ class MovieEyeTrackingVisualizer:
                 ax.annotate(frame_info, xy=(0.02, 0.02), xycoords='axes fraction',
                             fontsize=10, bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
 
-        # Generate filename
-        filename = f"{prefix}heatmap_{eye}"
-        if frame_range:
-            filename += f"_frames_{frame_range[0]}_{frame_range[1]}"
-
-        # Save the plot
+        # Create filename and save the plot
+        filename = self._create_plot_filename(prefix, f"heatmap_{eye}", frame_range=frame_range)
         self.save_plot(plots_dir, filename, fig)
 
     def plot_fixation_duration_distribution(self,
@@ -538,8 +578,9 @@ class MovieEyeTrackingVisualizer:
             plots_dir: Path to save the plot
             prefix: Prefix for the plot filename
         """
-        if data.empty:
-            print("Empty dataframe, cannot plot fixation duration distribution.")
+        # Validate input data
+        required_columns = ['timestamp']
+        if not self._validate_plot_data(data, required_columns, "Empty dataframe, cannot plot fixation duration distribution."):
             return
 
         # Extract fixation durations by finding start and end times of fixation events
@@ -613,8 +654,8 @@ class MovieEyeTrackingVisualizer:
             ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, fontsize=10,
                     verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-        # Save the plot
-        filename = f"{prefix}fixation_duration_distribution"
+        # Create filename and save the plot
+        filename = self._create_plot_filename(prefix, "fixation_duration_distribution")
         self.save_plot(plots_dir, filename, fig)
 
     def plot_saccade_amplitude_distribution(self,
@@ -634,8 +675,8 @@ class MovieEyeTrackingVisualizer:
             plots_dir: Path to save the plot
             prefix: Prefix for the plot filename
         """
-        if data.empty:
-            print("Empty dataframe, cannot plot saccade amplitude distribution.")
+        # Validate input data
+        if not self._validate_plot_data(data, None, "Empty dataframe, cannot plot saccade amplitude distribution."):
             return
 
         # Calculate saccade amplitudes from the data
@@ -643,36 +684,41 @@ class MovieEyeTrackingVisualizer:
 
         for eye in ['left', 'right']:
             saccade_col = f'is_saccade_{eye}'
-            if saccade_col in data.columns:
-                # Extract saccades
-                saccade_segments = []
-                current_segment = []
+            x_col, y_col = f'x_{eye}', f'y_{eye}'
+            
+            # Check if required columns exist
+            if (saccade_col not in data.columns or 
+                x_col not in data.columns or 
+                y_col not in data.columns):
+                continue
+                
+            # Extract saccades
+            saccade_segments = []
+            current_segment = []
 
-                # Identify continuous segments of saccades
-                for i, is_saccade in enumerate(data[saccade_col]):
-                    if is_saccade:
-                        current_segment.append(i)
-                    elif current_segment:
-                        saccade_segments.append(current_segment)
-                        current_segment = []
-
-                # Don't forget the last segment if it exists
-                if current_segment:
+            # Identify continuous segments of saccades
+            for i, is_saccade in enumerate(data[saccade_col]):
+                if is_saccade:
+                    current_segment.append(i)
+                elif current_segment:
                     saccade_segments.append(current_segment)
+                    current_segment = []
 
-                # Calculate amplitude for each saccade
-                x_col, y_col = f'x_{eye}', f'y_{eye}'
-                if x_col in data.columns and y_col in data.columns:
-                    for segment in saccade_segments:
-                        if len(segment) >= 2:  # Need at least start and end points
-                            # Get start and end positions
-                            start_x, start_y = data.iloc[segment[0]][x_col], data.iloc[segment[0]][y_col]
-                            end_x, end_y = data.iloc[segment[-1]][x_col], data.iloc[segment[-1]][y_col]
+            # Don't forget the last segment if it exists
+            if current_segment:
+                saccade_segments.append(current_segment)
 
-                            # Calculate Euclidean distance (amplitude in pixels)
-                            if not (np.isnan(start_x) or np.isnan(start_y) or np.isnan(end_x) or np.isnan(end_y)):
-                                amplitude = np.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
-                                saccade_amplitudes[eye].append(amplitude)
+            # Calculate amplitude for each saccade
+            for segment in saccade_segments:
+                if len(segment) >= 2:  # Need at least start and end points
+                    # Get start and end positions
+                    start_x, start_y = data.iloc[segment[0]][x_col], data.iloc[segment[0]][y_col]
+                    end_x, end_y = data.iloc[segment[-1]][x_col], data.iloc[segment[-1]][y_col]
+
+                    # Calculate Euclidean distance (amplitude in pixels)
+                    if not (np.isnan(start_x) or np.isnan(start_y) or np.isnan(end_x) or np.isnan(end_y)):
+                        amplitude = np.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
+                        saccade_amplitudes[eye].append(amplitude)
 
         # Create figure
         fig, ax = plt.subplots(figsize=self.default_figsize)
@@ -722,8 +768,8 @@ class MovieEyeTrackingVisualizer:
             ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, fontsize=10,
                     verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-        # Save the plot
-        filename = f"{prefix}saccade_amplitude_distribution"
+        # Create filename and save the plot
+        filename = self._create_plot_filename(prefix, "saccade_amplitude_distribution")
         self.save_plot(plots_dir, filename, fig)
 
     def plot_pupil_size_timeseries(self,
@@ -746,8 +792,9 @@ class MovieEyeTrackingVisualizer:
             window_size: Size of the moving average window for smoothing
             frame_markers: Whether to display movie frame markers
         """
-        if data.empty:
-            print("Empty dataframe, cannot plot pupil size timeseries.")
+        # Validate input data
+        required_columns = ['timestamp']
+        if not self._validate_plot_data(data, required_columns, "Empty dataframe or missing timestamp data, cannot plot pupil size timeseries."):
             return
 
         # Check if pupil data exists
@@ -761,12 +808,6 @@ class MovieEyeTrackingVisualizer:
         # Create figure with white background
         fig, ax = plt.subplots(figsize=self.default_figsize, facecolor='white')
         ax.set_facecolor('white')
-
-        # Convert timestamp to seconds for better readability
-        # First ensure timestamp column exists and is numeric
-        if 'timestamp' not in data.columns:
-            print("No timestamp column found.")
-            return
 
         # Convert timestamp to seconds from start
         time_sec = (data['timestamp'] - data['timestamp'].iloc[0]) / 1000.0
@@ -835,8 +876,8 @@ class MovieEyeTrackingVisualizer:
         ax.annotate(duration_text, xy=(0.02, 0.02), xycoords='axes fraction',
                     fontsize=10, bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
 
-        # Save the plot
-        filename = f"{prefix}pupil_size_timeseries"
+        # Create filename and save the plot
+        filename = self._create_plot_filename(prefix, "pupil_size_timeseries")
         plt.tight_layout()
         self.save_plot(plots_dir, filename, fig)
 
@@ -861,11 +902,9 @@ class MovieEyeTrackingVisualizer:
             prefix: Prefix for the plot filename
             window_size: Size of the moving average window for smoothing
         """
-        if data.empty:
-            return
-
-        # We'll focus on one eye (left) for this visualization to avoid clutter
-        if 'pupil_left' not in data.columns or data['pupil_left'].isna().all():
+        # Validate input data
+        required_columns = ['timestamp', 'pupil_left']
+        if not self._validate_plot_data(data, required_columns, "Missing required pupil data for event visualization."):
             return
 
         # Create figure
@@ -934,8 +973,8 @@ class MovieEyeTrackingVisualizer:
         # Add grid
         ax.grid(True, linestyle='--', alpha=0.7)
 
-        # Save the plot
-        filename = f"{prefix}pupil_size_events"
+        # Create filename and save the plot
+        filename = self._create_plot_filename(prefix, "pupil_size_events")
         self.save_plot(plots_dir, filename, fig)
 
     def plot_social_attention_analysis(self,
@@ -957,13 +996,14 @@ class MovieEyeTrackingVisualizer:
             roi_data: Optional dictionary mapping frame numbers to lists of ROIs (x, y, width, height)
                      Each ROI should be labeled as 'face', 'eyes', or other social element
         """
-        if data.empty:
-            print("Empty dataframe, cannot plot social attention analysis.")
+        # Validate input data
+        required_columns = ['frame_number']
+        if not self._validate_plot_data(data, required_columns, "Empty dataframe or missing frame data, cannot plot social attention analysis."):
             return
 
         # If we don't have specific ROI data, we'll simulate it with frame-based random ROIs
         # In a real implementation, you would use actual annotated ROI data for accurate analysis
-        if roi_data is None and 'frame_number' in data.columns:
+        if roi_data is None:
             # Create simulated ROIs for demonstration purposes
             unique_frames = data['frame_number'].dropna().unique()
             roi_data = {}
@@ -1102,8 +1142,8 @@ class MovieEyeTrackingVisualizer:
         # Adjust layout
         plt.tight_layout()
 
-        # Save the plot
-        filename = f"{prefix}social_attention_analysis"
+        # Create filename and save the plot
+        filename = self._create_plot_filename(prefix, "social_attention_analysis")
         self.save_plot(plots_dir, filename, fig)
 
         # Create an additional visualization showing the distribution of social fixations over time
@@ -1123,7 +1163,9 @@ class MovieEyeTrackingVisualizer:
             plots_dir: Path to save the plot
             prefix: Prefix for plot filenames
         """
+        # Validate there is fixation data to plot
         if not fixations_in_rois:
+            print("No fixation data in ROIs available for timeline visualization.")
             return
 
         # Create figure
@@ -1223,8 +1265,8 @@ class MovieEyeTrackingVisualizer:
 
         ax.legend(handles=legend_elements, loc='upper right')
 
-        # Save the plot
-        filename = f"{prefix}social_attention_timeline"
+        # Create filename and save the plot
+        filename = self._create_plot_filename(prefix, "social_attention_timeline")
         self.save_plot(plots_dir, filename, fig)
 
     def process_all_movies(self, participant_id: Optional[str] = None) -> Dict[str, Dict[str, List[str]]]:
@@ -1283,7 +1325,8 @@ class MovieEyeTrackingVisualizer:
             print("Generating general visualizations...")
             try:
                 self.plot_scanpath(data, plots_dir, prefix)
-                scanpath_path = os.path.join(plots_dir, f"{prefix}scanpath.png")
+                scanpath_filename = self._create_plot_filename(prefix, "scanpath")
+                scanpath_path = os.path.join(plots_dir, f"{scanpath_filename}.png")
                 if os.path.exists(scanpath_path):
                     movie_plots['general'].append(scanpath_path)
             except Exception as e:
@@ -1292,7 +1335,8 @@ class MovieEyeTrackingVisualizer:
             for eye in ['left', 'right']:
                 try:
                     self.plot_heatmap(data, plots_dir, prefix, eye=eye)
-                    heatmap_path = os.path.join(plots_dir, f"{prefix}heatmap_{eye}.png")
+                    heatmap_filename = self._create_plot_filename(prefix, f"heatmap_{eye}")
+                    heatmap_path = os.path.join(plots_dir, f"{heatmap_filename}.png")
                     if os.path.exists(heatmap_path):
                         movie_plots['gaze'].append(heatmap_path)
                 except Exception as e:
@@ -1302,7 +1346,8 @@ class MovieEyeTrackingVisualizer:
             print("Generating fixation visualizations...")
             try:
                 self.plot_fixation_duration_distribution(data, plots_dir, prefix)
-                fixation_path = os.path.join(plots_dir, f"{prefix}fixation_duration_distribution.png")
+                fixation_filename = self._create_plot_filename(prefix, "fixation_duration_distribution")
+                fixation_path = os.path.join(plots_dir, f"{fixation_filename}.png")
                 if os.path.exists(fixation_path):
                     movie_plots['fixation'].append(fixation_path)
             except Exception as e:
@@ -1312,7 +1357,8 @@ class MovieEyeTrackingVisualizer:
             print("Generating saccade visualizations...")
             try:
                 self.plot_saccade_amplitude_distribution(data, plots_dir, prefix)
-                saccade_path = os.path.join(plots_dir, f"{prefix}saccade_amplitude_distribution.png")
+                saccade_filename = self._create_plot_filename(prefix, "saccade_amplitude_distribution")
+                saccade_path = os.path.join(plots_dir, f"{saccade_filename}.png")
                 if os.path.exists(saccade_path):
                     movie_plots['saccade'].append(saccade_path)
             except Exception as e:
@@ -1322,8 +1368,10 @@ class MovieEyeTrackingVisualizer:
             print("Generating pupil visualizations...")
             try:
                 self.plot_pupil_size_timeseries(data, plots_dir, prefix)
-                pupil_path = os.path.join(plots_dir, f"{prefix}pupil_size_timeseries.png")
-                events_path = os.path.join(plots_dir, f"{prefix}pupil_size_events.png")
+                pupil_filename = self._create_plot_filename(prefix, "pupil_size_timeseries")
+                events_filename = self._create_plot_filename(prefix, "pupil_size_events")
+                pupil_path = os.path.join(plots_dir, f"{pupil_filename}.png")
+                events_path = os.path.join(plots_dir, f"{events_filename}.png")
                 if os.path.exists(pupil_path):
                     movie_plots['pupil'].append(pupil_path)
                 if os.path.exists(events_path):
@@ -1335,8 +1383,10 @@ class MovieEyeTrackingVisualizer:
             print("Generating social attention visualizations...")
             try:
                 self.plot_social_attention_analysis(data, plots_dir, prefix)
-                social_path = os.path.join(plots_dir, f"{prefix}social_attention_analysis.png")
-                timeline_path = os.path.join(plots_dir, f"{prefix}social_attention_timeline.png")
+                social_filename = self._create_plot_filename(prefix, "social_attention_analysis")
+                timeline_filename = self._create_plot_filename(prefix, "social_attention_timeline")
+                social_path = os.path.join(plots_dir, f"{social_filename}.png")
+                timeline_path = os.path.join(plots_dir, f"{timeline_filename}.png")
                 if os.path.exists(social_path):
                     movie_plots['social'].append(social_path)
                 if os.path.exists(timeline_path):
@@ -1357,7 +1407,6 @@ class MovieEyeTrackingVisualizer:
                                    for movie_plots in results.values())
 
         print(f"\nVisualization complete! Generated {total_visualizations} plots across {total_movies} movies.")
-
 
         return results
 
@@ -1710,10 +1759,10 @@ class MovieEyeTrackingVisualizer:
                 f.write(f'<div class="movie-section" id="{movie_id}">\n')
 
                 # Movie header (always visible, clickable)
-                f.write(f'    <div class="movie-header" onclick="toggleMovieSection(\'{movie_id}\')">\n')
+                f.write('    <div class="movie-header" onclick="toggleMovieSection(\'' + movie_id + '\')">\n')
                 f.write(f'        <h2>{movie_name}</h2>\n')
                 f.write(f'        <span class="count-badge">{total_plots} visualizations</span>\n')
-                f.write(f'    </div>\n')
+                f.write('    </div>\n')
 
                 # Movie content (initially hidden) - ALL visualization content goes inside this div
                 f.write(f'    <div class="movie-content">\n')
@@ -1732,9 +1781,9 @@ class MovieEyeTrackingVisualizer:
                 for category, plots in movie_plots.items():
                     if plots:
                         category_display = get_category_display_name(category)
-                        f.write(f'        <div class="plot-category">\n')
+                        f.write('        <div class="plot-category">\n')
                         f.write(f'            <h3>{category_display}</h3>\n')
-                        f.write(f'            <div class="plot-grid">\n')
+                        f.write('            <div class="plot-grid">\n')
 
                         for plot_path in plots:
                             plot_name = os.path.basename(plot_path)
@@ -1747,15 +1796,15 @@ class MovieEyeTrackingVisualizer:
 
                             rel_path = get_relative_path(plot_path)
 
-                            f.write(f'                <div class="plot-container">\n')
+                            f.write('                <div class="plot-container">\n')
                             f.write(f'                    <div class="plot-title">{readable_name}</div>\n')
                             # Add onclick event to show modal with full-size image
                             f.write(
                                 f'                    <img src="{rel_path}" alt="{readable_name}" loading="lazy" onclick="showModal(\'{rel_path}\', \'{readable_name}\');">\n')
-                            f.write(f'                </div>\n')
+                            f.write('                </div>\n')
 
-                        f.write(f'            </div>\n')
-                        f.write(f'        </div>\n')
+                        f.write('            </div>\n')
+                        f.write('        </div>\n')
 
                 # Close movie content div
                 f.write('    </div>\n')

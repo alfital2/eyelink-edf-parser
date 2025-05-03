@@ -82,7 +82,7 @@ def main():
 
     # Create output directories
     data_dir, viz_dir, feature_dir = create_output_dirs(args.output)
-    print(f"Output directories created:")
+    print("Output directories created:")
     print(f"  - Data: {data_dir}")
     print(f"  - Visualizations: {viz_dir}")
     print(f"  - Features: {feature_dir}")
