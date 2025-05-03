@@ -12,9 +12,17 @@ from animated_scanpath import create_animated_scanpath
 from PyQt5.QtWidgets import QApplication
 
 # Create a QApplication instance for testing
-app = QApplication.instance()
-if app is None:
-    app = QApplication([])
+try:
+    app = QApplication.instance()
+    if app is None:
+        # If running in CI, pass the offscreen platform argument
+        if 'CI' in os.environ or 'GITHUB_ACTIONS' in os.environ:
+            app = QApplication(['', '-platform', 'offscreen'])
+        else:
+            app = QApplication([])
+except Exception as e:
+    print(f"Warning: Could not initialize QApplication: {e}")
+    print("Tests requiring GUI will be skipped")
 
 
 class TestAnimatedScanpath(unittest.TestCase):
@@ -50,6 +58,10 @@ class TestAnimatedScanpath(unittest.TestCase):
         
     def test_create_animated_scanpath(self):
         """Test creating an animated scanpath widget."""
+        # Skip test if QApplication initialization failed
+        if not QApplication.instance():
+            self.skipTest("QApplication not available, skipping GUI test")
+        
         # Create the widget
         try:
             widget = create_animated_scanpath(
@@ -79,6 +91,10 @@ class TestAnimatedScanpath(unittest.TestCase):
 
     def test_multiple_movie_loading(self):
         """Test loading multiple movies into the widget."""
+        # Skip test if QApplication initialization failed
+        if not QApplication.instance():
+            self.skipTest("QApplication not available, skipping GUI test")
+            
         # Create the widget with first movie
         widget = create_animated_scanpath(
             data=self.eye_data,
@@ -111,6 +127,10 @@ class TestAnimatedScanpath(unittest.TestCase):
         
     def test_error_handling_with_missing_columns(self):
         """Test error handling when loading data with missing columns."""
+        # Skip test if QApplication initialization failed
+        if not QApplication.instance():
+            self.skipTest("QApplication not available, skipping GUI test")
+            
         # Create data with missing columns
         bad_data = pd.DataFrame({
             'timestamp': list(range(1000, 1100, 10)),
@@ -139,6 +159,10 @@ class TestAnimatedScanpath(unittest.TestCase):
 
     def test_empty_dataframe_handling(self):
         """Test handling of empty dataframes."""
+        # Skip test if QApplication initialization failed
+        if not QApplication.instance():
+            self.skipTest("QApplication not available, skipping GUI test")
+            
         # Create an empty dataframe
         empty_data = pd.DataFrame()
         

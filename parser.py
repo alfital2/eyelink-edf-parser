@@ -78,17 +78,10 @@ class EyeLinkASCParser:
 
         return self.metadata
 
-    def parse_messages(self):
-        """Extract all message markers from the file"""
-        # Add structures to track movie segments
-        self.movie_segments = []
-        current_movie = None
-        movie_start_time = None
-        movie_frames = {}  # To track frames for each movie
-        default_movie_name = "unknown_movie"  # Default name when no movie name is found
+    def _collect_messages_and_frames(self):
+        """First pass - collect all messages and frame markers"""
         has_frame_markers = False
-
-        # First pass - collect all messages and frame markers
+        
         for line in self.file_lines:
             if line.startswith('MSG'):
                 match = self.msg_pattern.match(line)
@@ -118,12 +111,14 @@ class EyeLinkASCParser:
 
                         # Add to general frame markers list
                         self.frame_markers.append(frame_marker)
-
-        # Second pass - identify movie segments
-        # First look for explicit "Movie File Name" markers
-        potential_movies = []
+                        
+        return has_frame_markers
+    
+    def _identify_movie_markers(self):
+        """Second pass - identify movie start and end markers"""
         start_markers = []
         end_markers = []
+        potential_movies = []
 
         for msg in self.messages:
             content = msg['content']
@@ -148,8 +143,11 @@ class EyeLinkASCParser:
                     'timestamp': timestamp,
                     'frame_count': frame_count
                 })
-
-        # Match start and end markers to create movie segments
+                
+        return start_markers, end_markers, potential_movies
+    
+    def _process_paired_markers(self, start_markers, end_markers, potential_movies):
+        """Process paired start/end markers to create movie segments"""
         for start in start_markers:
             # Find matching end marker
             matching_end = None
@@ -185,8 +183,11 @@ class EyeLinkASCParser:
                     'start_time': start_time,
                     'end_time': end_time
                 })
-
-        # Handle case where we have end markers but no start markers
+                
+        return potential_movies
+    
+    def _process_unpaired_end_markers(self, end_markers, potential_movies):
+        """Process end markers that don't have matching start markers"""
         for end in end_markers:
             # Check if this end marker has already been matched
             already_matched = False
@@ -232,9 +233,11 @@ class EyeLinkASCParser:
                         'start_time': start_time,
                         'end_time': end_time
                     })
-
-        # If we still have no movie segments but have frame markers, create segments
-        # based on frame number continuity
+                    
+        return potential_movies
+    
+    def _create_segments_from_frame_continuity(self, has_frame_markers, end_markers, default_movie_name):
+        """Create segments based on frame number continuity if no explicit markers exist"""
         if not self.movie_segments and has_frame_markers:
             # Sort frames by timestamp
             sorted_frames = sorted(self.frame_markers, key=lambda x: x['timestamp'])
@@ -305,8 +308,9 @@ class EyeLinkASCParser:
                         'frames': segment_frames,
                         'frame_count': frame_count
                     })
-
-        # If we still have no movie segments but have samples, create a single segment for all data
+    
+    def _create_fallback_segment(self, end_markers, default_movie_name):
+        """Create a fallback segment if no other segments were created but we have sample data"""
         if not self.movie_segments and self.sample_data:
             # Find first and last timestamps
             first_timestamp = self.sample_data[0]['timestamp']
@@ -328,7 +332,31 @@ class EyeLinkASCParser:
                 'frames': {1: first_timestamp},  # Create at least one fake frame
                 'frame_count': frame_count
             })
-
+    
+    def parse_messages(self):
+        """Extract all message markers from the file"""
+        # Initialize structures
+        self.movie_segments = []
+        default_movie_name = "unknown_movie"  # Default name when no movie name is found
+        
+        # Step 1: Collect all messages and frame markers
+        has_frame_markers = self._collect_messages_and_frames()
+        
+        # Step 2: Identify movie markers
+        start_markers, end_markers, potential_movies = self._identify_movie_markers()
+        
+        # Step 3: Process paired markers
+        potential_movies = self._process_paired_markers(start_markers, end_markers, potential_movies)
+        
+        # Step 4: Process unpaired end markers
+        potential_movies = self._process_unpaired_end_markers(end_markers, potential_movies)
+        
+        # Step 5: Create segments from frame continuity if needed
+        self._create_segments_from_frame_continuity(has_frame_markers, end_markers, default_movie_name)
+        
+        # Step 6: Create fallback segment if needed
+        self._create_fallback_segment(end_markers, default_movie_name)
+        
         # Debug info
         print(f"Identified {len(self.movie_segments)} movie segments:")
         for i, segment in enumerate(self.movie_segments):
@@ -503,13 +531,13 @@ class EyeLinkASCParser:
         """Parse all data from the ASC file"""
         print(f"Reading file: {self.file_path}")
         self.read_file()
-        print(f"Parsing metadata...")
+        print("Parsing metadata...")
         self.parse_metadata()
-        print(f"Parsing messages...")
+        print("Parsing messages...")
         self.parse_messages()
-        print(f"Parsing samples...")
+        print("Parsing samples...")
         num_samples = self.parse_samples()
-        print(f"Parsing events...")
+        print("Parsing events...")
         event_counts = self.parse_events()
 
         print(f"Parsed {num_samples} samples")

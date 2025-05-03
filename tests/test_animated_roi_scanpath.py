@@ -13,9 +13,17 @@ from roi_manager import ROIManager
 from PyQt5.QtWidgets import QApplication
 
 # Create a QApplication instance for testing
-app = QApplication.instance()
-if app is None:
-    app = QApplication([])
+try:
+    app = QApplication.instance()
+    if app is None:
+        # If running in CI, pass the offscreen platform argument
+        if 'CI' in os.environ or 'GITHUB_ACTIONS' in os.environ:
+            app = QApplication(['', '-platform', 'offscreen'])
+        else:
+            app = QApplication([])
+except Exception as e:
+    print(f"Warning: Could not initialize QApplication: {e}")
+    print("Tests requiring GUI will be skipped")
 
 TEST_ROI_FILE = "test_data/test_roi.json"
 
@@ -87,6 +95,10 @@ class TestAnimatedROIScanpath(unittest.TestCase):
 
     def test_roi_widget_initialization(self):
         """Test initialization of the animated ROI scanpath widget."""
+        # Skip test if QApplication initialization failed
+        if not QApplication.instance():
+            self.skipTest("QApplication not available, skipping GUI test")
+            
         # Create the widget
         widget = AnimatedROIScanpathWidget()
 
@@ -94,14 +106,20 @@ class TestAnimatedROIScanpath(unittest.TestCase):
         self.assertTrue(widget.show_rois, "ROI display should be enabled by default")
         self.assertTrue(widget.highlight_active_roi, "ROI highlighting should be enabled by default")
         self.assertTrue(widget.show_roi_labels, "ROI labels should be enabled by default")
-        self.assertTrue(widget.show_left_eye, "Left eye display should be enabled by default")
-        self.assertTrue(widget.show_right_eye, "Right eye display should be enabled by default")
+        
+        # Check checkboxes for eye display instead of direct attributes
+        self.assertTrue(widget.show_left_cb.isChecked(), "Left eye display should be enabled by default")
+        self.assertTrue(widget.show_right_cb.isChecked(), "Right eye display should be enabled by default")
 
         # Verify ROI manager is initialized
         self.assertIsNotNone(widget.roi_manager, "ROI manager should be initialized")
 
     def test_roi_toggle_functions(self):
         """Test the toggle functions for ROI display options."""
+        # Skip test if QApplication initialization failed
+        if not QApplication.instance():
+            self.skipTest("QApplication not available, skipping GUI test")
+            
         # Create the widget with data
         widget = self.create_widget_with_data()
 
@@ -128,6 +146,10 @@ class TestAnimatedROIScanpath(unittest.TestCase):
 
     def test_roi_detection(self):
         """Test ROI detection at gaze points."""
+        # Skip test if QApplication initialization failed
+        if not QApplication.instance():
+            self.skipTest("QApplication not available, skipping GUI test")
+            
         # Create the widget with data
         widget = self.create_widget_with_data()
 
