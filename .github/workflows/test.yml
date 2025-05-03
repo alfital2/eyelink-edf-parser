@@ -9,10 +9,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    
+    # Set up a virtual display for GUI tests
+    env:
+      DISPLAY: :99.0
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      
+    - name: Setup virtual display
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb
+        Xvfb :99 -screen 0 1280x1024x24 &
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -24,19 +34,44 @@ jobs:
         python -m pip install --upgrade pip
         # Core scientific packages for data processing and analysis
         pip install numpy pandas matplotlib seaborn scipy
+        # UI components
+        pip install PyQt5
         # Testing
         pip install pytest
 
     - name: Prepare test files
       run: |
-        # Create directory if it doesn't exist
+        # Create directories if they don't exist
         mkdir -p asc_files
-        # Copy test files to the expected location
+        mkdir -p tests/plots
+        
+        # Copy test files to the expected locations
         cp tests/asc_files/* asc_files/
+        
+        # Ensure test_data directory exists
+        mkdir -p tests/test_data
+        
+        # Create any missing test data files
+        if [ ! -f tests/test_data/test_roi.json ]; then
+          echo '{
+            "1": [
+              {"label": "Face", "points": [[100, 100], [200, 100], [200, 200], [100, 200]]},
+              {"label": "Hand", "points": [[300, 300], [400, 300], [400, 400], [300, 400]]}
+            ],
+            "2": [
+              {"label": "Torso", "points": [[500, 500], [600, 500], [600, 600], [500, 600]]}
+            ],
+            "5": [
+              {"label": "Face", "points": [[700, 700], [800, 700], [800, 800], [700, 800]]}
+            ]
+          }' > tests/test_data/test_roi.json
+        fi
+        
         # List files to verify
         ls -la asc_files/
+        ls -la tests/test_data/
 
     - name: Run tests
       run: |
-        cd tests
-        python -m unittest test_parser.py
+        # Run all tests using run_all.py
+        python tests/run_all.py
