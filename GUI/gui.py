@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend to avoid thread issues
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QPushButton, QLabel, QFileDialog,
+                             QHBoxLayout, QGridLayout, QPushButton, QLabel, QFileDialog,
                              QComboBox, QCheckBox, QTabWidget, QSplitter,
                              QProgressBar, QMessageBox, QTableWidget,
                              QTableWidgetItem, QHeaderView, QGroupBox,
@@ -231,6 +231,13 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.viz_explanation.setStyleSheet("background-color: #f8f8f8; border: 1px solid #e0e0e0;")
         else:
             self.viz_explanation.setStyleSheet("")  # Default dark mode styling
+            
+        # Update feature header color based on theme
+        if hasattr(self, 'features_header'):
+            if self.is_dark_mode:
+                self.features_header.setStyleSheet("color: #58b0ff;")
+            else:
+                self.features_header.setStyleSheet("color: #0078d7;")
 
         # Re-display current visualization if any
         if hasattr(self, 'image_label') and self.image_label.pixmap() is not None:
@@ -252,44 +259,86 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 font-weight: bold; 
                 font-size: 14px;
                 color: #f0f0f0;
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 20px;
+                padding-top: 16px;
+                background-color: rgba(40, 40, 40, 150);
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+                background-color: #333;
             }
             QTableWidget { 
                 gridline-color: #555;
                 background-color: rgba(60, 60, 60, 120);
                 border: 1px solid #555;
+                border-radius: 3px;
+                alternate-background-color: rgba(70, 70, 70, 120);
             }
             QTableWidget::item {
                 color: #f0f0f0;
+                padding: 4px;
+            }
+            QTableWidget::item:selected {
+                background-color: #2a82da;
             }
             QHeaderView::section {
                 background-color: #444;
                 color: #f0f0f0;
                 border: 1px solid #555;
+                padding: 4px;
+                font-weight: bold;
             }
             QTextBrowser {
                 background-color: rgba(60, 60, 60, 120);
                 border: 1px solid #555;
+                border-radius: 3px;
             }
             """
         else:
             return """
             QGroupBox { 
                 font-weight: bold; 
-                font-size: 14px; 
+                font-size: 14px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                margin-top: 20px;
+                padding-top: 16px;
+                background-color: rgba(245, 245, 245, 150);
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+                background-color: #f5f5f5;
             }
             QTableWidget { 
                 gridline-color: #ccc;
                 background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                alternate-background-color: #f9f9f9;
             }
             QTableWidget::item {
-                background-color: white;
+                padding: 4px;
+            }
+            QTableWidget::item:selected {
+                background-color: #0078d7;
+                color: white;
             }
             QHeaderView::section {
                 background-color: #f0f0f0;
                 border: 1px solid #ddd;
+                padding: 4px;
+                font-weight: bold;
             }
             QTextBrowser {
                 background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 3px;
             }
             """
 
@@ -460,17 +509,33 @@ class EyeMovementAnalysisGUI(QMainWindow):
         features_tab = QWidget()
         features_layout = QVBoxLayout(features_tab)
 
-        # Features header and overview
-        features_header = QLabel("Eye Movement Features for Autism Research")
-        features_header.setFont(QFont("Arial", 12, QFont.Bold))
-        features_layout.addWidget(features_header)
+        # Features header
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(10, 10, 10, 0)
+        
+        self.features_header = QLabel("Eye Movement Features for Autism Research")
+        self.features_header.setFont(QFont("Arial", 14, QFont.Bold))
+        # Set header color based on theme
+        if self.is_dark_mode:
+            self.features_header.setStyleSheet("color: #58b0ff;")
+        else:
+            self.features_header.setStyleSheet("color: #0078d7;")
+        header_layout.addWidget(self.features_header)
+        
+        # Add button to toggle compact/expanded view if needed in the future
+        # (we're not implementing the functionality yet, but leaving space for it)
+        header_layout.addStretch()
+        
+        features_layout.addWidget(header_container)
 
         features_overview = QTextBrowser()
         features_overview.setMaximumHeight(100)
         features_overview.setHtml("""
-        <p>This tab displays extracted eye movement features that may serve as biomarkers for autism spectrum disorder classification.
+        <p><b>Eye Movement Features for Autism Research</b> - This tab displays extracted eye movement features that may serve as biomarkers for autism spectrum disorder classification.
         Research suggests individuals with ASD exhibit distinct patterns of visual attention, particularly when viewing social stimuli.</p>
-        <p>Move your mouse over any feature name to see a detailed explanation of how it's calculated and its potential relevance to autism research.</p>
+        <p><b>Data Organization:</b> Features are organized into categories, with left and right eye measurements displayed side by side for easy comparison.
+        Hover over any feature name to see a detailed explanation of how it's calculated and its potential relevance to autism research.</p>
         """)
         features_layout.addWidget(features_overview)
 
@@ -533,81 +598,203 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
 
     def create_feature_tables(self, parent_layout):
-        """Create organized tables for different categories of features"""
+        """Create organized tables for different categories of features in a grid layout"""
         # Create a scrollable widget for all tables
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_content = QWidget()
-        features_scroll_layout = QVBoxLayout(scroll_content)
-        features_scroll_layout.setSpacing(10)  # Add spacing between feature groups
+        
+        # Use a grid layout instead of vertical layout for better space utilization
+        features_grid_layout = QGridLayout(scroll_content)
+        features_grid_layout.setSpacing(15)  # Add more spacing between feature groups
+        features_grid_layout.setContentsMargins(15, 15, 15, 15)  # Add margins around the grid
 
         if not self.is_dark_mode:
             # Fix the background color for light mode
             scroll_content.setStyleSheet("background-color: #f5f5f5;")
 
-        # Create feature category sections
+        # Define categories but reorganize them to better handle left/right eye metrics
         categories = [
-            ("Basic Information", ["participant_id"]),
-            ("Pupil Size Features", ["pupil_left_mean", "pupil_left_std", "pupil_left_min", "pupil_left_max",
-                                     "pupil_right_mean", "pupil_right_std", "pupil_right_min", "pupil_right_max"]),
-            ("Gaze Position Features", ["gaze_left_x_std", "gaze_left_y_std", "gaze_left_dispersion",
-                                        "gaze_right_x_std", "gaze_right_y_std", "gaze_right_dispersion"]),
-            ("Fixation Features",
-             ["fixation_left_count", "fixation_left_duration_mean", "fixation_left_duration_std", "fixation_left_rate",
-              "fixation_right_count", "fixation_right_duration_mean", "fixation_right_duration_std",
-              "fixation_right_rate"]),
-            ("Saccade Features", ["saccade_left_count", "saccade_left_amplitude_mean", "saccade_left_amplitude_std",
-                                  "saccade_left_duration_mean",
-                                  "saccade_right_count", "saccade_right_amplitude_mean", "saccade_right_amplitude_std",
-                                  "saccade_right_duration_mean"]),
-            ("Blink Features", ["blink_left_count", "blink_left_duration_mean", "blink_left_rate",
-                                "blink_right_count", "blink_right_duration_mean", "blink_right_rate"]),
-            ("Head Movement Features",
-             ["head_movement_mean", "head_movement_std", "head_movement_max", "head_movement_frequency"])
+            ("Basic Information", ["participant_id"], 0, 0),  # row 0, col 0
+            
+            # Combined eye metrics tables with left/right columns
+            ("Pupil Size", [
+                {"name": "Mean Pupil Size", "left": "pupil_left_mean", "right": "pupil_right_mean"},
+                {"name": "Pupil Size Std", "left": "pupil_left_std", "right": "pupil_right_std"},
+                {"name": "Min Pupil Size", "left": "pupil_left_min", "right": "pupil_right_min"},
+                {"name": "Max Pupil Size", "left": "pupil_left_max", "right": "pupil_right_max"}
+            ], 0, 1),  # row 0, col 1
+            
+            ("Gaze Position", [
+                {"name": "X Standard Deviation", "left": "gaze_left_x_std", "right": "gaze_right_x_std"},
+                {"name": "Y Standard Deviation", "left": "gaze_left_y_std", "right": "gaze_right_y_std"},
+                {"name": "Gaze Dispersion", "left": "gaze_left_dispersion", "right": "gaze_right_dispersion"}
+            ], 0, 2),  # row 0, col 2
+            
+            ("Fixation Metrics", [
+                {"name": "Fixation Count", "left": "fixation_left_count", "right": "fixation_right_count"},
+                {"name": "Mean Duration (ms)", "left": "fixation_left_duration_mean", "right": "fixation_right_duration_mean"},
+                {"name": "Duration Std (ms)", "left": "fixation_left_duration_std", "right": "fixation_right_duration_std"},
+                {"name": "Fixation Rate", "left": "fixation_left_rate", "right": "fixation_right_rate"}
+            ], 1, 0),  # row 1, col 0
+            
+            ("Saccade Metrics", [
+                {"name": "Saccade Count", "left": "saccade_left_count", "right": "saccade_right_count"},
+                {"name": "Mean Amplitude (°)", "left": "saccade_left_amplitude_mean", "right": "saccade_right_amplitude_mean"},
+                {"name": "Amplitude Std (°)", "left": "saccade_left_amplitude_std", "right": "saccade_right_amplitude_std"},
+                {"name": "Mean Duration (ms)", "left": "saccade_left_duration_mean", "right": "saccade_right_duration_mean"}
+            ], 1, 1),  # row 1, col 1
+            
+            ("Blink Metrics", [
+                {"name": "Blink Count", "left": "blink_left_count", "right": "blink_right_count"},
+                {"name": "Mean Duration (ms)", "left": "blink_left_duration_mean", "right": "blink_right_duration_mean"},
+                {"name": "Blink Rate", "left": "blink_left_rate", "right": "blink_right_rate"}
+            ], 1, 2),  # row 1, col 2
+            
+            ("Head Movement", [
+                {"name": "Mean", "key": "head_movement_mean"},
+                {"name": "Standard Deviation", "key": "head_movement_std"},
+                {"name": "Maximum", "key": "head_movement_max"},
+                {"name": "Frequency", "key": "head_movement_frequency"}
+            ], 2, 0)  # row 2, col 0
         ]
 
         # Create a table for each category
         self.feature_tables = {}
-        for category_name, feature_keys in categories:
+        
+        # Track all original feature keys for tooltip lookup
+        all_feature_keys = {}
+        
+        # Process each category
+        for category_info in categories:
+            category_name = category_info[0]
+            feature_data = category_info[1]
+            row_pos = category_info[2]
+            col_pos = category_info[3]
+            
             # Create a group box for each category
             group_box = QGroupBox(category_name)
             group_layout = QVBoxLayout(group_box)
-
-            # Create table
-            table = QTableWidget(0, 2)  # Rows will be added dynamically, 2 columns (Feature, Value)
-            table.setHorizontalHeaderLabels(["Feature", "Value"])
-            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+            group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            
+            # Determine if this is a combined left/right table or a regular table
+            is_combined = isinstance(feature_data[0], dict) and "left" in feature_data[0]
+            
+            if is_combined:
+                # Combined left/right table with 3 columns
+                table = QTableWidget(0, 3)  # Metric, Left Eye, Right Eye
+                table.setHorizontalHeaderLabels(["Metric", "Left Eye", "Right Eye"])
+                
+                # Equal column widths
+                header = table.horizontalHeader()
+                header.setSectionResizeMode(0, QHeaderView.Stretch)
+                header.setSectionResizeMode(1, QHeaderView.Stretch)
+                header.setSectionResizeMode(2, QHeaderView.Stretch)
+                
+                # Collect all the original feature keys for tooltips
+                feature_keys = []
+                for item in feature_data:
+                    if "left" in item:
+                        feature_keys.append(item["left"])
+                    if "right" in item:
+                        feature_keys.append(item["right"])
+                
+                all_feature_keys[category_name] = feature_keys
+                
+            elif "key" in feature_data[0]:
+                # Non-combined table with single value column
+                table = QTableWidget(0, 2)  # Metric, Value
+                table.setHorizontalHeaderLabels(["Metric", "Value"])
+                
+                # Equal column widths
+                header = table.horizontalHeader()
+                header.setSectionResizeMode(0, QHeaderView.Stretch)
+                header.setSectionResizeMode(1, QHeaderView.Stretch)
+                
+                # Collect feature keys for tooltips
+                feature_keys = [item["key"] for item in feature_data]
+                all_feature_keys[category_name] = feature_keys
+                
+            else:
+                # Regular table (e.g., Basic Information)
+                table = QTableWidget(0, 2)  # Feature, Value
+                table.setHorizontalHeaderLabels(["Feature", "Value"])
+                
+                # Equal column widths
+                header = table.horizontalHeader()
+                header.setSectionResizeMode(0, QHeaderView.Stretch)
+                header.setSectionResizeMode(1, QHeaderView.Stretch)
+                
+                all_feature_keys[category_name] = feature_data
+            
+            # Common table settings
             table.verticalHeader().setVisible(False)
-
+            table.setAlternatingRowColors(True)  # Enable alternating row colors
+            table.setSelectionMode(QTableWidget.SingleSelection)  # Allow selecting entire rows
+            table.setSelectionBehavior(QTableWidget.SelectRows)
+            
             # Additional styling for light mode
             if not self.is_dark_mode:
                 table.setStyleSheet("QTableWidget { background-color: white; border: 1px solid #ddd; }")
-
+            
             # Enable tooltips for the table
             table.setMouseTracking(True)
-            table.cellEntered.connect(lambda row, col, t=table, features=feature_keys:
-                                      self.show_feature_tooltip(row, col, t, features))
+            table.cellEntered.connect(lambda row, col, t=table, cat=category_name: 
+                                     self.show_feature_tooltip(row, col, t, all_feature_keys.get(cat, [])))
 
-            # Store the table and its associated feature keys
+            # Store the table and feature configuration
             self.feature_tables[category_name] = {
                 "table": table,
-                "features": feature_keys
+                "features": feature_data,
+                "is_combined": is_combined
             }
-
+            
+            # Add table to the group box
             group_layout.addWidget(table)
-            features_scroll_layout.addWidget(group_box)
+            
+            # Add to grid layout at specified position
+            features_grid_layout.addWidget(group_box, row_pos, col_pos)
 
+        # Set column and row stretch factors to distribute space evenly
+        for i in range(3):  # 3 columns
+            features_grid_layout.setColumnStretch(i, 1)
+        for i in range(3):  # 3 rows
+            features_grid_layout.setRowStretch(i, 1)
+        
         scroll_area.setWidget(scroll_content)
         parent_layout.addWidget(scroll_area)
 
     def show_feature_tooltip(self, row, col, table, features):
         """Show a tooltip with feature explanation when hovering over a feature name"""
-        if col == 0 and row < len(features):  # Only show tooltips for feature names column
-            feature_key = features[row]
-            if feature_key in self.feature_explanations:
-                explanation = self.feature_explanations[feature_key]
-                QToolTip.showText(QCursor.pos(), explanation)
+        # Only show tooltips for feature names column (first column)
+        if col == 0 and row < table.rowCount():
+            # Get the tooltip directly from the table item if it exists
+            cell_item = table.item(row, col)
+            if cell_item and cell_item.toolTip():
+                QToolTip.showText(QCursor.pos(), cell_item.toolTip())
+            # If no tooltip in the item, try to find it from the feature list
+            elif features and row < len(features):
+                # Handle different feature list formats
+                if isinstance(features, list):
+                    if row < len(features):
+                        # Get the feature key based on the type of item in the list
+                        if isinstance(features[row], dict):
+                            # If the features are dictionaries with keys
+                            if "key" in features[row]:
+                                feature_key = features[row]["key"]
+                            elif "left" in features[row]:
+                                # For left/right pairs, show tooltip for the left key
+                                feature_key = features[row]["left"]
+                            else:
+                                return
+                        else:
+                            # Simple string keys
+                            feature_key = features[row]
+                        
+                        # Show the tooltip if we have an explanation
+                        if feature_key in self.feature_explanations:
+                            explanation = self.feature_explanations[feature_key]
+                            QToolTip.showText(QCursor.pos(), explanation)
 
     def update_feature_tables(self, features_df):
         """Update all feature tables with data from the features DataFrame"""
@@ -620,51 +807,131 @@ class EyeMovementAnalysisGUI(QMainWindow):
         # For each category table, update the values
         for category_name, table_info in self.feature_tables.items():
             table = table_info["table"]
-            feature_keys = table_info["features"]
+            feature_data = table_info["features"]
+            is_combined = table_info.get("is_combined", False)
 
             # Clear the table
             table.setRowCount(0)
 
-            # Add rows for each feature in this category
-            for i, feature_key in enumerate(feature_keys):
-                if feature_key in features_df.columns:
-                    row_position = table.rowCount()
-                    table.insertRow(row_position)
-
-                    # Format the feature name to be more readable
-                    display_name = feature_key.replace('_', ' ').title()
-
-                    # Create items
-                    name_item = QTableWidgetItem(display_name)
-
-                    # Set tooltip with explanation if available
-                    if feature_key in self.feature_explanations:
-                        name_item.setToolTip(self.feature_explanations[feature_key])
-
-                    # Format the value based on type
-                    value = features_df[feature_key].iloc[0]
-
-                    # Handle NaN values properly
-                    if pd.isna(value):
-                        value_text = "N/A"
-                    elif isinstance(value, (int, float)):
-                        # Format number with appropriate precision
-                        try:
-                            if float(value).is_integer():
-                                value_text = str(int(value))
-                            else:
-                                value_text = f"{value:.4f}"
-                        except:
-                            # If conversion fails, use the value as is
-                            value_text = str(value)
-                    else:
-                        value_text = str(value)
-
-                    value_item = QTableWidgetItem(value_text)
-
-                    # Add items to table
-                    table.setItem(row_position, 0, name_item)
-                    table.setItem(row_position, 1, value_item)
+            # Handle different table types
+            if is_combined:
+                # This is a combined left/right eye table with 3 columns
+                self._update_combined_table(table, feature_data, features_df)
+            elif isinstance(feature_data[0], dict) and "key" in feature_data[0]:
+                # This is a regular table with named metrics
+                self._update_named_table(table, feature_data, features_df)
+            else:
+                # This is a simple table with direct feature keys
+                self._update_simple_table(table, feature_data, features_df)
+                
+    def _update_combined_table(self, table, feature_data, features_df):
+        """Update a table with left/right eye metrics in separate columns"""
+        for i, item in enumerate(feature_data):
+            # Skip if either left or right key is missing from the feature data
+            if not all(key in features_df.columns for key in [item["left"], item["right"]]):
+                continue
+                
+            row_position = table.rowCount()
+            table.insertRow(row_position)
+            
+            # Create items
+            name_item = QTableWidgetItem(item["name"])
+            
+            # Set tooltips with explanation if available
+            tooltips = []
+            if item["left"] in self.feature_explanations:
+                tooltips.append(self.feature_explanations[item["left"]])
+            if item["right"] in self.feature_explanations:
+                tooltips.append(self.feature_explanations[item["right"]])
+                
+            if tooltips:
+                name_item.setToolTip("\n\n".join(tooltips))
+                
+            # Get and format left eye value
+            left_value = features_df[item["left"]].iloc[0]
+            left_value_text = self._format_value(left_value)
+            left_item = QTableWidgetItem(left_value_text)
+            
+            # Get and format right eye value
+            right_value = features_df[item["right"]].iloc[0]
+            right_value_text = self._format_value(right_value)
+            right_item = QTableWidgetItem(right_value_text)
+            
+            # Add items to table
+            table.setItem(row_position, 0, name_item)
+            table.setItem(row_position, 1, left_item)
+            table.setItem(row_position, 2, right_item)
+    
+    def _update_named_table(self, table, feature_data, features_df):
+        """Update a table with named metrics (non-left/right)"""
+        for i, item in enumerate(feature_data):
+            if item["key"] not in features_df.columns:
+                continue
+                
+            row_position = table.rowCount()
+            table.insertRow(row_position)
+            
+            # Create items
+            name_item = QTableWidgetItem(item["name"])
+            
+            # Set tooltip with explanation if available
+            if item["key"] in self.feature_explanations:
+                name_item.setToolTip(self.feature_explanations[item["key"]])
+                
+            # Get and format value
+            value = features_df[item["key"]].iloc[0]
+            value_text = self._format_value(value)
+            value_item = QTableWidgetItem(value_text)
+            
+            # Add items to table
+            table.setItem(row_position, 0, name_item)
+            table.setItem(row_position, 1, value_item)
+    
+    def _update_simple_table(self, table, feature_keys, features_df):
+        """Update a simple table with direct feature keys"""
+        for i, feature_key in enumerate(feature_keys):
+            if feature_key not in features_df.columns:
+                continue
+                
+            row_position = table.rowCount()
+            table.insertRow(row_position)
+            
+            # Format the feature name to be more readable
+            display_name = feature_key.replace('_', ' ').title()
+            
+            # Create items
+            name_item = QTableWidgetItem(display_name)
+            
+            # Set tooltip with explanation if available
+            if feature_key in self.feature_explanations:
+                name_item.setToolTip(self.feature_explanations[feature_key])
+                
+            # Get and format value
+            value = features_df[feature_key].iloc[0]
+            value_text = self._format_value(value)
+            value_item = QTableWidgetItem(value_text)
+            
+            # Add items to table
+            table.setItem(row_position, 0, name_item)
+            table.setItem(row_position, 1, value_item)
+    
+    def _format_value(self, value):
+        """Format a value for display in the table"""
+        # Handle NaN values properly
+        if pd.isna(value):
+            return "N/A"
+        elif isinstance(value, (int, float)):
+            # Format number with appropriate precision
+            try:
+                if float(value).is_integer():
+                    return str(int(value))
+                else:
+                    return f"{value:.4f}"
+            except:
+                # If conversion fails, use the value as is
+                return str(value)
+        else:
+            return str(value)
 
     def select_files(self):
         # Combined file filter for both ASC and CSV files
