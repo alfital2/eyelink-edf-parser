@@ -225,6 +225,19 @@ Later, you can load these CSV files directly (much faster than re-processing ASC
 python main.py --input path/to/results/data/ --output new_results --use_csv --visualize
 ```
 
+#### Using CSV Files With The GUI
+
+For an even more convenient workflow with pre-processed data:
+
+1. Launch the GUI: `python GUI/gui.py`
+2. Select "CSV Files" from the dropdown in the Data Processing tab
+3. Click "Select File(s)" and choose your unified_eye_metrics*.csv files
+4. Set an output directory and processing options
+5. Click "Process Data" to quickly load and visualize the pre-processed data
+
+This approach significantly speeds up the workflow when you've already processed ASC files
+and want to revisit visualizations or perform additional analysis.
+
 ### Using the Animated Scanpath Feature
 
 1. Process your data through the GUI or command line
