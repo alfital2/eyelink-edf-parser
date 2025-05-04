@@ -523,9 +523,23 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.features_header.setStyleSheet("color: #0078d7;")
         header_layout.addWidget(self.features_header)
         
-        # Add button to toggle compact/expanded view if needed in the future
-        # (we're not implementing the functionality yet, but leaving space for it)
+        # Add movie selector dropdown
         header_layout.addStretch()
+        
+        # Create a widget to hold the movie selector
+        selector_container = QWidget()
+        selector_layout = QHBoxLayout(selector_container)
+        selector_layout.setContentsMargins(0, 0, 0, 0)
+        
+        selector_layout.addWidget(QLabel("Select Movie:"))
+        self.feature_movie_combo = QComboBox()
+        self.feature_movie_combo.setToolTip("Select a movie to view its specific features, or 'All Data' to view aggregate features")
+        self.feature_movie_combo.addItem("All Data")
+        self.feature_movie_combo.setEnabled(False)
+        self.feature_movie_combo.currentIndexChanged.connect(self.feature_movie_selected)
+        selector_layout.addWidget(self.feature_movie_combo)
+        
+        header_layout.addWidget(selector_container)
         
         features_layout.addWidget(header_container)
 
@@ -536,6 +550,8 @@ class EyeMovementAnalysisGUI(QMainWindow):
         Research suggests individuals with ASD exhibit distinct patterns of visual attention, particularly when viewing social stimuli.</p>
         <p><b>Data Organization:</b> Features are organized into categories, with left and right eye measurements displayed side by side for easy comparison.
         Hover over any feature name to see a detailed explanation of how it's calculated and its potential relevance to autism research.</p>
+        <p><b>Movie Selection:</b> Use the dropdown menu to view features for specific movies or "All Data" for aggregate metrics across the entire recording session. 
+        This allows you to compare eye movement patterns across different stimuli and identify context-specific effects.</p>
         """)
         features_layout.addWidget(features_overview)
 
@@ -1034,6 +1050,30 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         # Update the features display if features were extracted
         if "features" in results and not results["features"].empty:
+            # Store movie-specific features if available
+            if "movie_features" in results:
+                self.movie_features = results["movie_features"]
+                
+                # Clear and populate the feature movie combo box
+                self.feature_movie_combo.clear()
+                self.feature_movie_combo.addItem("All Data")
+                
+                # Add movie names (excluding "All Data" which we already added)
+                for movie_name in self.movie_features.keys():
+                    if movie_name != "All Data":
+                        self.feature_movie_combo.addItem(movie_name)
+                
+                # Enable the combo box if we have multiple movies
+                self.feature_movie_combo.setEnabled(self.feature_movie_combo.count() > 1)
+                
+                # Select "All Data" by default
+                self.feature_movie_combo.setCurrentIndex(0)
+            else:
+                # If no movie features, just update with the overall features
+                self.movie_features = {"All Data": results["features"]}
+                self.feature_movie_combo.setEnabled(False)
+            
+            # Display the features (initially shows "All Data")
             self.update_feature_tables(results["features"])
 
         # Update visualization controls if visualizations were generated
@@ -1069,6 +1109,27 @@ class EyeMovementAnalysisGUI(QMainWindow):
         if 'report_path' in results and os.path.exists(results['report_path']):
             self.report_path = results['report_path']
             self.report_btn.setEnabled(True)
+            
+    def feature_movie_selected(self, index):
+        """Handle movie selection in the features tab"""
+        if index < 0 or not hasattr(self, 'movie_features'):
+            return
+            
+        # Get the selected movie name
+        movie_name = self.feature_movie_combo.currentText()
+        
+        # Update the features display with the selected movie's features
+        if movie_name in self.movie_features:
+            # Update feature tables with the selected movie's features
+            self.update_feature_tables(self.movie_features[movie_name])
+            
+            # Update the header to indicate which movie's features are displayed
+            if movie_name == "All Data":
+                header_text = "Eye Movement Features for Autism Research"
+            else:
+                header_text = f"Eye Movement Features: {movie_name}"
+            
+            self.features_header.setText(header_text)
 
     def processing_error(self, error_msg):
         self.status_label.setText("Error occurred during processing")
