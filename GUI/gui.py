@@ -768,6 +768,11 @@ class EyeMovementAnalysisGUI(QMainWindow):
             # ROI files must be explicitly selected by the user, 
             # not automatically loaded - no automatic ROI detection here
             
+            # Set screen dimensions for visualizations if not already set
+            if not hasattr(self, 'screen_width') or not hasattr(self, 'screen_height'):
+                self.screen_width = 1280
+                self.screen_height = 1024
+            
             # Load data for animated tabs from all movies
             for movie in self.visualization_results.keys():
                 self._load_animation_data_for_movie(movie)
@@ -888,6 +893,11 @@ class EyeMovementAnalysisGUI(QMainWindow):
                             if data_path:
                                 break
 
+            # Make sure we have the screen dimensions initialized
+            if not hasattr(self, 'screen_width') or not hasattr(self, 'screen_height'):
+                self.screen_width = 1280
+                self.screen_height = 1024
+
             # Load the data if found
             if data_path and os.path.exists(data_path):
                 print(f"Loading animation data from: {data_path}")
@@ -910,19 +920,15 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 else:
                     # Load data into the animated scanpath widget
                     if hasattr(self, 'animated_viz_tab'):
+                        # If the widget isn't already a combined scanpath widget, 
+                        # import the module and confirm it's the correct import
+                        from animated_scanpath import AnimatedScanpathWidget
+                        
+                        # Load the data - this will populate both the normal scanpath
+                        # view and any ROI data if available
                         success = self.animated_viz_tab.load_data(data, movie, self.screen_width, self.screen_height)
                         if success:
-                            print(f"Loaded {len(data)} samples for ROI animated visualization")
-                    
-                    # Also load into regular animated scanpath widget
-                    from animated_scanpath import AnimatedScanpathWidget
-                    # Find the animated scanpath tab
-                    for i in range(self.centralWidget().findChild(QTabWidget).count()):
-                        tab = self.centralWidget().findChild(QTabWidget).widget(i)
-                        if hasattr(tab, 'scanpath_widget') and isinstance(tab.scanpath_widget, AnimatedScanpathWidget):
-                            success = tab.scanpath_widget.load_data(data, movie, self.screen_width, self.screen_height)
-                            if success:
-                                print(f"Loaded {len(data)} samples for regular animated visualization")
+                            print(f"Loaded {len(data)} samples for animated visualization")
             else:
                 print(f"No data file found for movie: {movie}")
                 print(f"Searched in directory: {data_dir}")
