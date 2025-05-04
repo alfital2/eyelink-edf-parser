@@ -162,6 +162,119 @@ class TestCSVLoader(unittest.TestCase):
         # Additional metrics
         self.assertIn('head_movement_mean', features_df.columns)
         self.assertIn('inter_pupil_distance_mean', features_df.columns)
+        
+    def test_movie_specific_features(self):
+        """Test extracting features for specific movies from the unified DataFrame"""
+        # Create multiple movie segments in the test data
+        test_data = []
+        
+        # Create data for movie1
+        for i in range(50):
+            row = dict(self.test_df.iloc[i])
+            row['movie_name'] = 'movie1'
+            test_data.append(row)
+            
+        # Create data for movie2
+        for i in range(50, 100):
+            row = dict(self.test_df.iloc[i])
+            row['movie_name'] = 'movie2'
+            test_data.append(row)
+            
+        # Create DataFrame with multiple movies
+        multi_movie_df = pd.DataFrame(test_data)
+        
+        # Make sure groups are different enough for testing
+        multi_movie_df.loc[multi_movie_df['movie_name'] == 'movie2', 'pupil_left'] += 500
+        multi_movie_df.loc[multi_movie_df['movie_name'] == 'movie2', 'pupil_right'] += 500
+        
+        # Use mock function to test both extract_features_per_movie() from EyeLinkASCParser
+        # and the load_csv_file functionality 
+        
+        # Get features for all data
+        all_features = extract_features_from_unified(multi_movie_df, self.participant_id)
+        
+        # Get features grouped by movie
+        movie1_df = multi_movie_df[multi_movie_df['movie_name'] == 'movie1']
+        movie2_df = multi_movie_df[multi_movie_df['movie_name'] == 'movie2']
+        
+        movie1_features = extract_features_from_unified(movie1_df, self.participant_id)
+        movie2_features = extract_features_from_unified(movie2_df, self.participant_id)
+        
+        # Ensure the participant_id is consistent
+        self.assertEqual(all_features['participant_id'].iloc[0], self.participant_id)
+        self.assertEqual(movie1_features['participant_id'].iloc[0], self.participant_id)
+        self.assertEqual(movie2_features['participant_id'].iloc[0], self.participant_id)
+        
+        # Test that movie2 pupil values are higher than movie1 as we added 500
+        self.assertGreater(
+            movie2_features['pupil_left_mean'].iloc[0], 
+            movie1_features['pupil_left_mean'].iloc[0]
+        )
+        self.assertGreater(
+            movie2_features['pupil_right_mean'].iloc[0], 
+            movie1_features['pupil_right_mean'].iloc[0]
+        )
+        
+        # Test the whole dataset values are between movie1 and movie2 (as they should be averaged)
+        self.assertGreater(all_features['pupil_left_mean'].iloc[0], movie1_features['pupil_left_mean'].iloc[0])
+        self.assertLess(all_features['pupil_left_mean'].iloc[0], movie2_features['pupil_left_mean'].iloc[0])
+        
+        # Test event counts (fixations, saccades, blinks)
+        self.assertEqual(
+            all_features['fixation_left_count'].iloc[0],
+            movie1_features['fixation_left_count'].iloc[0] + movie2_features['fixation_left_count'].iloc[0]
+        )
+        
+    def test_load_csv_with_movie_features(self):
+        """Test loading a CSV file with multiple movies and extracting per-movie features"""
+        # Create a CSV file with multiple movies
+        multi_movie_data = []
+        
+        # Create data for movie1
+        for i in range(50):
+            row = dict(self.test_df.iloc[i])
+            row['movie_name'] = 'movie1'
+            multi_movie_data.append(row)
+            
+        # Create data for movie2 with different pupil values
+        for i in range(50, 100):
+            row = dict(self.test_df.iloc[i])
+            row['movie_name'] = 'movie2'
+            row['pupil_left'] += 500
+            row['pupil_right'] += 500
+            multi_movie_data.append(row)
+            
+        # Create DataFrame with multiple movies
+        multi_movie_df = pd.DataFrame(multi_movie_data)
+        
+        # Save to temp CSV
+        multi_movie_csv_path = os.path.join(self.temp_dir, 'test_participant_multi_movie_unified_eye_metrics.csv')
+        multi_movie_df.to_csv(multi_movie_csv_path, index=False)
+        
+        # Load the CSV with our function
+        result = load_csv_file(multi_movie_csv_path, extract_features=True)
+        
+        # Check that we have both the overall features and movie-specific features
+        self.assertIn('features', result)
+        self.assertIn('movie_features', result)
+        
+        # Check that movie_features contains entries for All Data, movie1, and movie2
+        self.assertIn('All Data', result['movie_features'])
+        self.assertIn('movie1', result['movie_features'])
+        self.assertIn('movie2', result['movie_features'])
+        
+        # Verify that movie2 features have higher pupil values than movie1
+        movie1_features = result['movie_features']['movie1']
+        movie2_features = result['movie_features']['movie2']
+        
+        self.assertGreater(
+            movie2_features['pupil_left_mean'].iloc[0], 
+            movie1_features['pupil_left_mean'].iloc[0]
+        )
+        
+        # Clean up
+        if os.path.exists(multi_movie_csv_path):
+            os.remove(multi_movie_csv_path)
 
 
 if __name__ == '__main__':

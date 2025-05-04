@@ -415,6 +415,11 @@ class EyeLinkASCParser:
         temp_fixations = {'left': {}, 'right': {}}
         temp_saccades = {'left': {}, 'right': {}}
         temp_blinks = {'left': {}, 'right': {}}
+        
+        # Keep track of which events have start markers
+        started_fixations = {'left': set(), 'right': set()}
+        started_saccades = {'left': set(), 'right': set()}
+        started_blinks = {'left': set(), 'right': set()}
 
         for line in self.file_lines:
             # Process each event type
@@ -423,39 +428,50 @@ class EyeLinkASCParser:
                 if match:
                     eye, timestamp = match.groups()
                     eye_key = 'left' if eye == 'L' else 'right'
-                    temp_fixations[eye_key].setdefault(int(timestamp), {
-                        'start_time': int(timestamp),
+                    start_time = int(timestamp)
+                    temp_fixations[eye_key].setdefault(start_time, {
+                        'start_time': start_time,
                         'end_time': None,
                         'duration': None,
                         'x': None,
                         'y': None,
                         'pupil': None
                     })
+                    # Mark this fixation as having a start marker
+                    started_fixations[eye_key].add(start_time)
 
             elif line.startswith('EFIX'):
                 match = self.fix_end_pattern.match(line)
                 if match:
-                    eye, start, end, duration, x, y, pupil = match.groups()
-                    eye_key = 'left' if eye == 'L' else 'right'
-                    start_time = int(start)
+                    try:
+                        eye, start, end, duration, x, y, pupil = match.groups()
+                        eye_key = 'left' if eye == 'L' else 'right'
+                        start_time = int(start)
 
-                    # Use dictionary update to efficiently merge data
-                    entry = temp_fixations[eye_key].setdefault(start_time, {'start_time': start_time})
-                    entry.update({
-                        'end_time': int(end),
-                        'duration': int(duration),
-                        'x': float(x),
-                        'y': float(y),
-                        'pupil': float(pupil)
-                    })
+                        # Only process if there was a corresponding SFIX marker
+                        if start_time in started_fixations[eye_key]:
+                            # Use dictionary update to efficiently merge data
+                            entry = temp_fixations[eye_key].get(start_time)
+                            if entry:
+                                entry.update({
+                                    'end_time': int(end),
+                                    'duration': int(duration),
+                                    'x': float(x),
+                                    'y': float(y),
+                                    'pupil': float(pupil)
+                                })
+                    except (ValueError, IndexError):
+                        # Skip malformed fixation data
+                        continue
 
             elif line.startswith('SSACC'):
                 match = self.sacc_start_pattern.match(line)
                 if match:
                     eye, timestamp = match.groups()
                     eye_key = 'left' if eye == 'L' else 'right'
-                    temp_saccades[eye_key].setdefault(int(timestamp), {
-                        'start_time': int(timestamp),
+                    start_time = int(timestamp)
+                    temp_saccades[eye_key].setdefault(start_time, {
+                        'start_time': start_time,
                         'end_time': None,
                         'duration': None,
                         'start_x': None,
@@ -465,52 +481,71 @@ class EyeLinkASCParser:
                         'amplitude': None,
                         'peak_velocity': None
                     })
+                    # Mark this saccade as having a start marker
+                    started_saccades[eye_key].add(start_time)
 
             elif line.startswith('ESACC'):
                 match = self.sacc_end_pattern.match(line)
                 if match:
-                    (eye, start, end, duration, start_x, start_y, end_x,
-                     end_y, amplitude, peak_velocity) = match.groups()
-                    eye_key = 'left' if eye == 'L' else 'right'
-                    start_time = int(start)
+                    try:
+                        (eye, start, end, duration, start_x, start_y, end_x,
+                         end_y, amplitude, peak_velocity) = match.groups()
+                        eye_key = 'left' if eye == 'L' else 'right'
+                        start_time = int(start)
 
-                    # Use dictionary update for efficiency
-                    entry = temp_saccades[eye_key].setdefault(start_time, {'start_time': start_time})
-                    entry.update({
-                        'end_time': int(end),
-                        'duration': int(duration),
-                        'start_x': float(start_x),
-                        'start_y': float(start_y),
-                        'end_x': float(end_x),
-                        'end_y': float(end_y),
-                        'amplitude': float(amplitude),
-                        'peak_velocity': float(peak_velocity)
-                    })
+                        # Only process if there was a corresponding SSACC marker
+                        if start_time in started_saccades[eye_key]:
+                            # Use dictionary update for efficiency
+                            entry = temp_saccades[eye_key].get(start_time)
+                            if entry:
+                                entry.update({
+                                    'end_time': int(end),
+                                    'duration': int(duration),
+                                    'start_x': float(start_x),
+                                    'start_y': float(start_y),
+                                    'end_x': float(end_x),
+                                    'end_y': float(end_y),
+                                    'amplitude': float(amplitude),
+                                    'peak_velocity': float(peak_velocity)
+                                })
+                    except (ValueError, IndexError):
+                        # Skip malformed saccade data
+                        continue
 
             elif line.startswith('SBLINK'):
                 match = self.blink_start_pattern.match(line)
                 if match:
                     eye, timestamp = match.groups()
                     eye_key = 'left' if eye == 'L' else 'right'
-                    temp_blinks[eye_key].setdefault(int(timestamp), {
-                        'start_time': int(timestamp),
+                    start_time = int(timestamp)
+                    temp_blinks[eye_key].setdefault(start_time, {
+                        'start_time': start_time,
                         'end_time': None,
                         'duration': None
                     })
+                    # Mark this blink as having a start marker
+                    started_blinks[eye_key].add(start_time)
 
             elif line.startswith('EBLINK'):
                 match = self.blink_end_pattern.match(line)
                 if match:
-                    eye, start, end, duration = match.groups()
-                    eye_key = 'left' if eye == 'L' else 'right'
-                    start_time = int(start)
+                    try:
+                        eye, start, end, duration = match.groups()
+                        eye_key = 'left' if eye == 'L' else 'right'
+                        start_time = int(start)
 
-                    # Use dictionary update for efficiency
-                    entry = temp_blinks[eye_key].setdefault(start_time, {'start_time': start_time})
-                    entry.update({
-                        'end_time': int(end),
-                        'duration': int(duration)
-                    })
+                        # Only process if there was a corresponding SBLINK marker
+                        if start_time in started_blinks[eye_key]:
+                            # Use dictionary update for efficiency
+                            entry = temp_blinks[eye_key].get(start_time)
+                            if entry:
+                                entry.update({
+                                    'end_time': int(end),
+                                    'duration': int(duration)
+                                })
+                    except (ValueError, IndexError):
+                        # Skip malformed blink data
+                        continue
 
         # Convert dictionaries to lists
         for eye in ['left', 'right']:
@@ -1201,8 +1236,33 @@ def load_csv_file(file_path: str, output_dir: str = None, extract_features: bool
     if not file_path.lower().endswith('.csv'):
         raise ValueError(f"Expected a CSV file, got: {file_path}")
     
-    # Load the unified eye metrics DataFrame
-    unified_df = pd.read_csv(file_path)
+    try:
+        # Load the unified eye metrics DataFrame with error handling for numeric values
+        # Use error_bad_lines=False (renamed to on_bad_lines='warn' in newer Pandas versions)
+        try:
+            # For pandas 1.3.0+
+            unified_df = pd.read_csv(file_path, on_bad_lines='warn')
+        except TypeError:
+            # For older pandas versions
+            unified_df = pd.read_csv(file_path, error_bad_lines=False)
+            
+        # Clean up numeric columns to handle malformed data
+        for col in unified_df.columns:
+            if col.startswith(('x_', 'y_', 'pupil_', 'gaze_velocity_', 'head_movement_')):
+                try:
+                    # Try to convert to numeric, coercing errors to NaN
+                    unified_df[col] = pd.to_numeric(unified_df[col], errors='coerce')
+                except Exception:
+                    # If conversion completely fails, keep as is
+                    print(f"Warning: Could not convert column {col} to numeric values")
+                    pass
+    except Exception as e:
+        print(f"Error loading CSV file: {e}")
+        # Return minimal results with empty dataframes
+        return {
+            'summary': {'samples': 0, 'fixations': 0, 'saccades': 0, 'blinks': 0, 'messages': 0, 'frames': 0},
+            'dataframes': {'unified_eye_metrics': pd.DataFrame(), 'samples': pd.DataFrame()}
+        }
     
     # Get the participant ID from the filename
     participant_id = os.path.splitext(os.path.basename(file_path))[0].replace('_unified_eye_metrics', '')
@@ -1277,67 +1337,79 @@ def load_csv_file(file_path: str, output_dir: str = None, extract_features: bool
     
     # Extract features if requested
     if extract_features:
-        # Extract features for all data
-        results['features'] = extract_features_from_unified(unified_df, participant_id)
-        
-        # Create a dictionary to store all features (all data + per movie)
-        all_features = {"All Data": results['features']}
-        
-        # Extract features per movie if movie_name column exists
-        if 'movie_name' in unified_df.columns:
-            # Group by movie and extract features for each movie
-            for movie_name, movie_df in unified_df.groupby('movie_name'):
-                if not movie_df.empty:
-                    movie_features = extract_features_from_unified(movie_df, participant_id)
-                    # Add movie name to features
-                    movie_features['movie_name'] = movie_name
-                    all_features[movie_name] = movie_features
-        
-        # Add all features to results
-        results['movie_features'] = all_features
-        
-        print("\nExtracted features:")
-        print(results['features'])
-        
-        # Save features if output directory provided
-        if output_dir:
-            features_dir = os.path.join(output_dir, 'features')
-            os.makedirs(features_dir, exist_ok=True)
+        try:
+            # Extract features for all data
+            results['features'] = extract_features_from_unified(unified_df, participant_id)
             
-            # Save combined features
-            features_path = os.path.join(features_dir, f"{participant_id}_features.csv")
-            results['features'].to_csv(features_path, index=False)
-            print(f"Saved combined features to {features_path}")
-            results['features_path'] = features_path
+            # Create a dictionary to store all features (all data + per movie)
+            all_features = {"All Data": results['features']}
             
-            # Save per-movie features
-            movie_features_paths = {}
-            for movie_name, features_df in all_features.items():
-                if movie_name == "All Data":
-                    continue
+            # Extract features per movie if movie_name column exists
+            if 'movie_name' in unified_df.columns:
+                # Group by movie and extract features for each movie
+                for movie_name, movie_df in unified_df.groupby('movie_name'):
+                    if not movie_df.empty and movie_name is not None:
+                        try:
+                            movie_features = extract_features_from_unified(movie_df, participant_id)
+                            # Add movie name to features
+                            movie_features['movie_name'] = movie_name
+                            all_features[movie_name] = movie_features
+                        except Exception as e:
+                            print(f"Warning: Could not extract features for movie {movie_name}: {e}")
+            
+            # Add all features to results
+            results['movie_features'] = all_features
+            
+            print("\nExtracted features:")
+            print(results['features'])
+            
+            # Save features if output directory provided
+            if output_dir:
+                features_dir = os.path.join(output_dir, 'features')
+                os.makedirs(features_dir, exist_ok=True)
                 
-                # Clean movie name for filename
-                clean_movie_name = re.sub(r'[^\w\d-]', '_', 
-                                         os.path.splitext(movie_name)[0] if '.' in movie_name else movie_name)
+                # Save combined features
+                features_path = os.path.join(features_dir, f"{participant_id}_features.csv")
+                results['features'].to_csv(features_path, index=False)
+                print(f"Saved combined features to {features_path}")
+                results['features_path'] = features_path
                 
-                movie_features_path = os.path.join(features_dir, f"{participant_id}_features_{clean_movie_name}.csv")
-                features_df.to_csv(movie_features_path, index=False)
-                print(f"Saved features for movie '{movie_name}' to {movie_features_path}")
-                movie_features_paths[movie_name] = movie_features_path
-            
-            results['movie_features_paths'] = movie_features_paths
+                # Save per-movie features
+                movie_features_paths = {}
+                for movie_name, features_df in all_features.items():
+                    if movie_name == "All Data":
+                        continue
+                    
+                    # Clean movie name for filename
+                    clean_movie_name = re.sub(r'[^\w\d-]', '_', 
+                                           os.path.splitext(movie_name)[0] if '.' in movie_name else movie_name)
+                    
+                    movie_features_path = os.path.join(features_dir, f"{participant_id}_features_{clean_movie_name}.csv")
+                    features_df.to_csv(movie_features_path, index=False)
+                    print(f"Saved features for movie '{movie_name}' to {movie_features_path}")
+                    movie_features_paths[movie_name] = movie_features_path
+                
+                results['movie_features_paths'] = movie_features_paths
+        except Exception as e:
+            print(f"Warning: Feature extraction failed: {e}")
+            # Create empty features as fallback
+            results['features'] = pd.DataFrame([{'participant_id': participant_id}])
+            results['movie_features'] = {"All Data": results['features']}
     
     # Save to output directory if requested
     if output_dir:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         
-        # Copy the unified metrics file to the output directory
-        output_path = os.path.join(output_dir, os.path.basename(file_path))
-        if output_path != file_path:  # Don't copy if it's the same file
-            unified_df.to_csv(output_path, index=False)
-            results['saved_files'] = [output_path]
-            print(f"Saved unified eye metrics to {output_path}")
+        try:
+            # Copy the unified metrics file to the output directory
+            output_path = os.path.join(output_dir, os.path.basename(file_path))
+            if output_path != file_path:  # Don't copy if it's the same file
+                unified_df.to_csv(output_path, index=False)
+                results['saved_files'] = [output_path]
+                print(f"Saved unified eye metrics to {output_path}")
+        except Exception as e:
+            print(f"Warning: Could not save unified metrics file: {e}")
     
     return results
 

@@ -407,6 +407,39 @@ class TestEyeLinkASCParser(unittest.TestCase):
                          "Incorrect left blink count in features")
         self.assertEqual(features_df['blink_right_count'].iloc[0], 1,
                          "Incorrect right blink count in features")
+        
+    def test_extract_features_by_movie(self):
+        """Test extraction of features per movie."""
+        # Get all features for validation
+        all_features_df = self.parser.extract_features()
+        
+        # Get features per movie
+        movie_features = self.parser.extract_features_per_movie()
+        
+        # The test file has one movie
+        self.assertIn("All Data", movie_features, 
+                      "All Data entry missing from per-movie features")
+        self.assertIn("Test_Movie.xvd", movie_features, 
+                      "Test_Movie.xvd entry missing from per-movie features")
+        
+        # Check that the all features match for test file with 1 movie
+        pd.testing.assert_frame_equal(all_features_df, movie_features["All Data"],
+                                     "All Data features don't match extract_features() result")
+        
+        # Because the movie feature extraction uses start/end time filtering, the counts
+        # might be different from the total file in some test files where events span
+        # movie boundaries. Let's just verify that there are events.
+        movie_df = movie_features["Test_Movie.xvd"]
+        self.assertGreater(movie_df['fixation_left_count'].iloc[0], 0,
+                           "Movie-specific features should contain fixations")
+        self.assertGreater(movie_df['fixation_right_count'].iloc[0], 0,
+                           "Movie-specific features should contain fixations")
+        
+        # Check that movie name was added to features
+        self.assertIn('movie_name', movie_df.columns,
+                      "movie_name column missing from movie-specific features")
+        self.assertEqual(movie_df['movie_name'].iloc[0], "Test_Movie.xvd",
+                         "Incorrect movie name in movie-specific features")
 
     def test_movie_segment_parsing(self):
         """Test parsing of movie segments and related information."""
