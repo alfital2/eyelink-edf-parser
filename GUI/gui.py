@@ -1,7 +1,17 @@
 import sys
 import os
+
+# Add parent directory to path so we can import modules from the parent directory
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+    
+# Configure matplotlib for thread safety BEFORE importing any matplotlib-related modules
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend to avoid thread issues
+
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QPushButton, QLabel, QFileDialog,
+                             QHBoxLayout, QGridLayout, QPushButton, QLabel, QFileDialog,
                              QComboBox, QCheckBox, QTabWidget, QSplitter,
                              QProgressBar, QMessageBox, QTableWidget,
                              QTableWidgetItem, QHeaderView, QGroupBox,
@@ -119,6 +129,10 @@ class ProcessingThread(QThread):
         except Exception as e:
             import traceback
             self.error_occurred.emit(f"Error: {str(e)}\n{traceback.format_exc()}")
+        finally:
+            # Proper cleanup to prevent phantom threads
+            self.quit()
+            self.wait()
 
 
 class AnimatedROIScanpathTab(QWidget):
@@ -157,7 +171,7 @@ class AnimatedROIScanpathTab(QWidget):
             return self.scanpath_widget.load_data(data, self.roi_file_path, movie_name, screen_width, screen_height)
         else:
             # If no ROI file is explicitly selected, load eye data without ROI
-            self.scanpath_widget.status_label.setText("Please select a ROI file to visualize ROIs")
+            # Status label was removed to save space
             return self.scanpath_widget.load_data(data, None, movie_name, screen_width, screen_height)
 
 
@@ -217,6 +231,13 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.viz_explanation.setStyleSheet("background-color: #f8f8f8; border: 1px solid #e0e0e0;")
         else:
             self.viz_explanation.setStyleSheet("")  # Default dark mode styling
+            
+        # Update feature header color based on theme
+        if hasattr(self, 'features_header'):
+            if self.is_dark_mode:
+                self.features_header.setStyleSheet("color: #58b0ff;")
+            else:
+                self.features_header.setStyleSheet("color: #0078d7;")
 
         # Re-display current visualization if any
         if hasattr(self, 'image_label') and self.image_label.pixmap() is not None:
@@ -238,44 +259,86 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 font-weight: bold; 
                 font-size: 14px;
                 color: #f0f0f0;
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 20px;
+                padding-top: 16px;
+                background-color: rgba(40, 40, 40, 150);
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+                background-color: #333;
             }
             QTableWidget { 
                 gridline-color: #555;
                 background-color: rgba(60, 60, 60, 120);
                 border: 1px solid #555;
+                border-radius: 3px;
+                alternate-background-color: rgba(70, 70, 70, 120);
             }
             QTableWidget::item {
                 color: #f0f0f0;
+                padding: 4px;
+            }
+            QTableWidget::item:selected {
+                background-color: #2a82da;
             }
             QHeaderView::section {
                 background-color: #444;
                 color: #f0f0f0;
                 border: 1px solid #555;
+                padding: 4px;
+                font-weight: bold;
             }
             QTextBrowser {
                 background-color: rgba(60, 60, 60, 120);
                 border: 1px solid #555;
+                border-radius: 3px;
             }
             """
         else:
             return """
             QGroupBox { 
                 font-weight: bold; 
-                font-size: 14px; 
+                font-size: 14px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                margin-top: 20px;
+                padding-top: 16px;
+                background-color: rgba(245, 245, 245, 150);
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+                background-color: #f5f5f5;
             }
             QTableWidget { 
                 gridline-color: #ccc;
                 background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                alternate-background-color: #f9f9f9;
             }
             QTableWidget::item {
-                background-color: white;
+                padding: 4px;
+            }
+            QTableWidget::item:selected {
+                background-color: #0078d7;
+                color: white;
             }
             QHeaderView::section {
                 background-color: #f0f0f0;
                 border: 1px solid #ddd;
+                padding: 4px;
+                font-weight: bold;
             }
             QTextBrowser {
                 background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 3px;
             }
             """
 
@@ -301,20 +364,16 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         self.file_label = QLabel("No files selected")
         
-        # Create a combo box for file type selection
-        self.file_type_combo = QComboBox()
-        self.file_type_combo.addItems(["ASC Files", "CSV Files"])
-        self.file_type_combo.setToolTip(
-            "Select which file type to load:\n"
-            "• ASC Files: Raw EyeLink eye tracking data (slower to process but contains all original data)\n"
-            "• CSV Files: Preprocessed unified_eye_metrics files (faster loading of previously analyzed data)"
+        # Create a single button for loading source files (both ASC and CSV)
+        select_file_btn = QPushButton("Load Source File(s)")
+        select_file_btn.setToolTip(
+            "Load eye tracking data files:\n"
+            "• ASC Files: Raw EyeLink eye tracking data\n"
+            "• CSV Files: Preprocessed unified_eye_metrics files"
         )
-        self.file_type_combo.currentIndexChanged.connect(self.update_file_type_info)
-        
-        select_file_btn = QPushButton("Select File(s)")
         select_file_btn.clicked.connect(self.select_files)
+        select_file_btn.setMinimumWidth(150)
 
-        file_layout.addWidget(self.file_type_combo)
         file_layout.addWidget(select_file_btn)
         file_layout.addWidget(self.file_label, 1)
 
@@ -353,12 +412,13 @@ class EyeMovementAnalysisGUI(QMainWindow):
         file_format_help = QPushButton("?")
         file_format_help.setFixedSize(25, 25)
         file_format_help.setToolTip(
-            "File Format Information:\n\n"
+            "Supported File Formats:\n\n"
             "ASC Files: Raw EyeLink eye tracking data files.\n"
             "These are the original files from the eye tracker.\n\n"
             "CSV Files: Preprocessed unified eye metrics files.\n"
             "These are generated after processing ASC files and contain\n"
-            "already extracted eye tracking data in CSV format."
+            "already extracted eye tracking data in CSV format.\n\n"
+            "The program automatically detects the file type based on the extension."
         )
         file_format_help.clicked.connect(self.show_file_format_help)
         
@@ -449,17 +509,49 @@ class EyeMovementAnalysisGUI(QMainWindow):
         features_tab = QWidget()
         features_layout = QVBoxLayout(features_tab)
 
-        # Features header and overview
-        features_header = QLabel("Eye Movement Features for Autism Research")
-        features_header.setFont(QFont("Arial", 12, QFont.Bold))
-        features_layout.addWidget(features_header)
+        # Features header
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(10, 10, 10, 0)
+        
+        self.features_header = QLabel("Eye Movement Features for Autism Research")
+        self.features_header.setFont(QFont("Arial", 14, QFont.Bold))
+        # Set header color based on theme
+        if self.is_dark_mode:
+            self.features_header.setStyleSheet("color: #58b0ff;")
+        else:
+            self.features_header.setStyleSheet("color: #0078d7;")
+        header_layout.addWidget(self.features_header)
+        
+        # Add movie selector dropdown
+        header_layout.addStretch()
+        
+        # Create a widget to hold the movie selector
+        selector_container = QWidget()
+        selector_layout = QHBoxLayout(selector_container)
+        selector_layout.setContentsMargins(0, 0, 0, 0)
+        
+        selector_layout.addWidget(QLabel("Select Movie:"))
+        self.feature_movie_combo = QComboBox()
+        self.feature_movie_combo.setToolTip("Select a movie to view its specific features, or 'All Data' to view aggregate features")
+        self.feature_movie_combo.addItem("All Data")
+        self.feature_movie_combo.setEnabled(False)
+        self.feature_movie_combo.currentIndexChanged.connect(self.feature_movie_selected)
+        selector_layout.addWidget(self.feature_movie_combo)
+        
+        header_layout.addWidget(selector_container)
+        
+        features_layout.addWidget(header_container)
 
         features_overview = QTextBrowser()
         features_overview.setMaximumHeight(100)
         features_overview.setHtml("""
-        <p>This tab displays extracted eye movement features that may serve as biomarkers for autism spectrum disorder classification.
+        <p><b>Eye Movement Features for Autism Research</b> - This tab displays extracted eye movement features that may serve as biomarkers for autism spectrum disorder classification.
         Research suggests individuals with ASD exhibit distinct patterns of visual attention, particularly when viewing social stimuli.</p>
-        <p>Move your mouse over any feature name to see a detailed explanation of how it's calculated and its potential relevance to autism research.</p>
+        <p><b>Data Organization:</b> Features are organized into categories, with left and right eye measurements displayed side by side for easy comparison.
+        Hover over any feature name to see a detailed explanation of how it's calculated and its potential relevance to autism research.</p>
+        <p><b>Movie Selection:</b> Use the dropdown menu to view features for specific movies or "All Data" for aggregate metrics across the entire recording session. 
+        This allows you to compare eye movement patterns across different stimuli and identify context-specific effects.</p>
         """)
         features_layout.addWidget(features_overview)
 
@@ -522,81 +614,203 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
 
     def create_feature_tables(self, parent_layout):
-        """Create organized tables for different categories of features"""
+        """Create organized tables for different categories of features in a grid layout"""
         # Create a scrollable widget for all tables
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_content = QWidget()
-        features_scroll_layout = QVBoxLayout(scroll_content)
-        features_scroll_layout.setSpacing(10)  # Add spacing between feature groups
+        
+        # Use a grid layout instead of vertical layout for better space utilization
+        features_grid_layout = QGridLayout(scroll_content)
+        features_grid_layout.setSpacing(15)  # Add more spacing between feature groups
+        features_grid_layout.setContentsMargins(15, 15, 15, 15)  # Add margins around the grid
 
         if not self.is_dark_mode:
             # Fix the background color for light mode
             scroll_content.setStyleSheet("background-color: #f5f5f5;")
 
-        # Create feature category sections
+        # Define categories but reorganize them to better handle left/right eye metrics
         categories = [
-            ("Basic Information", ["participant_id"]),
-            ("Pupil Size Features", ["pupil_left_mean", "pupil_left_std", "pupil_left_min", "pupil_left_max",
-                                     "pupil_right_mean", "pupil_right_std", "pupil_right_min", "pupil_right_max"]),
-            ("Gaze Position Features", ["gaze_left_x_std", "gaze_left_y_std", "gaze_left_dispersion",
-                                        "gaze_right_x_std", "gaze_right_y_std", "gaze_right_dispersion"]),
-            ("Fixation Features",
-             ["fixation_left_count", "fixation_left_duration_mean", "fixation_left_duration_std", "fixation_left_rate",
-              "fixation_right_count", "fixation_right_duration_mean", "fixation_right_duration_std",
-              "fixation_right_rate"]),
-            ("Saccade Features", ["saccade_left_count", "saccade_left_amplitude_mean", "saccade_left_amplitude_std",
-                                  "saccade_left_duration_mean",
-                                  "saccade_right_count", "saccade_right_amplitude_mean", "saccade_right_amplitude_std",
-                                  "saccade_right_duration_mean"]),
-            ("Blink Features", ["blink_left_count", "blink_left_duration_mean", "blink_left_rate",
-                                "blink_right_count", "blink_right_duration_mean", "blink_right_rate"]),
-            ("Head Movement Features",
-             ["head_movement_mean", "head_movement_std", "head_movement_max", "head_movement_frequency"])
+            ("Basic Information", ["participant_id"], 0, 0),  # row 0, col 0
+            
+            # Combined eye metrics tables with left/right columns
+            ("Pupil Size", [
+                {"name": "Mean Pupil Size", "left": "pupil_left_mean", "right": "pupil_right_mean"},
+                {"name": "Pupil Size Std", "left": "pupil_left_std", "right": "pupil_right_std"},
+                {"name": "Min Pupil Size", "left": "pupil_left_min", "right": "pupil_right_min"},
+                {"name": "Max Pupil Size", "left": "pupil_left_max", "right": "pupil_right_max"}
+            ], 0, 1),  # row 0, col 1
+            
+            ("Gaze Position", [
+                {"name": "X Standard Deviation", "left": "gaze_left_x_std", "right": "gaze_right_x_std"},
+                {"name": "Y Standard Deviation", "left": "gaze_left_y_std", "right": "gaze_right_y_std"},
+                {"name": "Gaze Dispersion", "left": "gaze_left_dispersion", "right": "gaze_right_dispersion"}
+            ], 0, 2),  # row 0, col 2
+            
+            ("Fixation Metrics", [
+                {"name": "Fixation Count", "left": "fixation_left_count", "right": "fixation_right_count"},
+                {"name": "Mean Duration (ms)", "left": "fixation_left_duration_mean", "right": "fixation_right_duration_mean"},
+                {"name": "Duration Std (ms)", "left": "fixation_left_duration_std", "right": "fixation_right_duration_std"},
+                {"name": "Fixation Rate", "left": "fixation_left_rate", "right": "fixation_right_rate"}
+            ], 1, 0),  # row 1, col 0
+            
+            ("Saccade Metrics", [
+                {"name": "Saccade Count", "left": "saccade_left_count", "right": "saccade_right_count"},
+                {"name": "Mean Amplitude (°)", "left": "saccade_left_amplitude_mean", "right": "saccade_right_amplitude_mean"},
+                {"name": "Amplitude Std (°)", "left": "saccade_left_amplitude_std", "right": "saccade_right_amplitude_std"},
+                {"name": "Mean Duration (ms)", "left": "saccade_left_duration_mean", "right": "saccade_right_duration_mean"}
+            ], 1, 1),  # row 1, col 1
+            
+            ("Blink Metrics", [
+                {"name": "Blink Count", "left": "blink_left_count", "right": "blink_right_count"},
+                {"name": "Mean Duration (ms)", "left": "blink_left_duration_mean", "right": "blink_right_duration_mean"},
+                {"name": "Blink Rate", "left": "blink_left_rate", "right": "blink_right_rate"}
+            ], 1, 2),  # row 1, col 2
+            
+            ("Head Movement", [
+                {"name": "Mean", "key": "head_movement_mean"},
+                {"name": "Standard Deviation", "key": "head_movement_std"},
+                {"name": "Maximum", "key": "head_movement_max"},
+                {"name": "Frequency", "key": "head_movement_frequency"}
+            ], 2, 0)  # row 2, col 0
         ]
 
         # Create a table for each category
         self.feature_tables = {}
-        for category_name, feature_keys in categories:
+        
+        # Track all original feature keys for tooltip lookup
+        all_feature_keys = {}
+        
+        # Process each category
+        for category_info in categories:
+            category_name = category_info[0]
+            feature_data = category_info[1]
+            row_pos = category_info[2]
+            col_pos = category_info[3]
+            
             # Create a group box for each category
             group_box = QGroupBox(category_name)
             group_layout = QVBoxLayout(group_box)
-
-            # Create table
-            table = QTableWidget(0, 2)  # Rows will be added dynamically, 2 columns (Feature, Value)
-            table.setHorizontalHeaderLabels(["Feature", "Value"])
-            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+            group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            
+            # Determine if this is a combined left/right table or a regular table
+            is_combined = isinstance(feature_data[0], dict) and "left" in feature_data[0]
+            
+            if is_combined:
+                # Combined left/right table with 3 columns
+                table = QTableWidget(0, 3)  # Metric, Left Eye, Right Eye
+                table.setHorizontalHeaderLabels(["Metric", "Left Eye", "Right Eye"])
+                
+                # Equal column widths
+                header = table.horizontalHeader()
+                header.setSectionResizeMode(0, QHeaderView.Stretch)
+                header.setSectionResizeMode(1, QHeaderView.Stretch)
+                header.setSectionResizeMode(2, QHeaderView.Stretch)
+                
+                # Collect all the original feature keys for tooltips
+                feature_keys = []
+                for item in feature_data:
+                    if "left" in item:
+                        feature_keys.append(item["left"])
+                    if "right" in item:
+                        feature_keys.append(item["right"])
+                
+                all_feature_keys[category_name] = feature_keys
+                
+            elif "key" in feature_data[0]:
+                # Non-combined table with single value column
+                table = QTableWidget(0, 2)  # Metric, Value
+                table.setHorizontalHeaderLabels(["Metric", "Value"])
+                
+                # Equal column widths
+                header = table.horizontalHeader()
+                header.setSectionResizeMode(0, QHeaderView.Stretch)
+                header.setSectionResizeMode(1, QHeaderView.Stretch)
+                
+                # Collect feature keys for tooltips
+                feature_keys = [item["key"] for item in feature_data]
+                all_feature_keys[category_name] = feature_keys
+                
+            else:
+                # Regular table (e.g., Basic Information)
+                table = QTableWidget(0, 2)  # Feature, Value
+                table.setHorizontalHeaderLabels(["Feature", "Value"])
+                
+                # Equal column widths
+                header = table.horizontalHeader()
+                header.setSectionResizeMode(0, QHeaderView.Stretch)
+                header.setSectionResizeMode(1, QHeaderView.Stretch)
+                
+                all_feature_keys[category_name] = feature_data
+            
+            # Common table settings
             table.verticalHeader().setVisible(False)
-
+            table.setAlternatingRowColors(True)  # Enable alternating row colors
+            table.setSelectionMode(QTableWidget.SingleSelection)  # Allow selecting entire rows
+            table.setSelectionBehavior(QTableWidget.SelectRows)
+            
             # Additional styling for light mode
             if not self.is_dark_mode:
                 table.setStyleSheet("QTableWidget { background-color: white; border: 1px solid #ddd; }")
-
+            
             # Enable tooltips for the table
             table.setMouseTracking(True)
-            table.cellEntered.connect(lambda row, col, t=table, features=feature_keys:
-                                      self.show_feature_tooltip(row, col, t, features))
+            table.cellEntered.connect(lambda row, col, t=table, cat=category_name: 
+                                     self.show_feature_tooltip(row, col, t, all_feature_keys.get(cat, [])))
 
-            # Store the table and its associated feature keys
+            # Store the table and feature configuration
             self.feature_tables[category_name] = {
                 "table": table,
-                "features": feature_keys
+                "features": feature_data,
+                "is_combined": is_combined
             }
-
+            
+            # Add table to the group box
             group_layout.addWidget(table)
-            features_scroll_layout.addWidget(group_box)
+            
+            # Add to grid layout at specified position
+            features_grid_layout.addWidget(group_box, row_pos, col_pos)
 
+        # Set column and row stretch factors to distribute space evenly
+        for i in range(3):  # 3 columns
+            features_grid_layout.setColumnStretch(i, 1)
+        for i in range(3):  # 3 rows
+            features_grid_layout.setRowStretch(i, 1)
+        
         scroll_area.setWidget(scroll_content)
         parent_layout.addWidget(scroll_area)
 
     def show_feature_tooltip(self, row, col, table, features):
         """Show a tooltip with feature explanation when hovering over a feature name"""
-        if col == 0 and row < len(features):  # Only show tooltips for feature names column
-            feature_key = features[row]
-            if feature_key in self.feature_explanations:
-                explanation = self.feature_explanations[feature_key]
-                QToolTip.showText(QCursor.pos(), explanation)
+        # Only show tooltips for feature names column (first column)
+        if col == 0 and row < table.rowCount():
+            # Get the tooltip directly from the table item if it exists
+            cell_item = table.item(row, col)
+            if cell_item and cell_item.toolTip():
+                QToolTip.showText(QCursor.pos(), cell_item.toolTip())
+            # If no tooltip in the item, try to find it from the feature list
+            elif features and row < len(features):
+                # Handle different feature list formats
+                if isinstance(features, list):
+                    if row < len(features):
+                        # Get the feature key based on the type of item in the list
+                        if isinstance(features[row], dict):
+                            # If the features are dictionaries with keys
+                            if "key" in features[row]:
+                                feature_key = features[row]["key"]
+                            elif "left" in features[row]:
+                                # For left/right pairs, show tooltip for the left key
+                                feature_key = features[row]["left"]
+                            else:
+                                return
+                        else:
+                            # Simple string keys
+                            feature_key = features[row]
+                        
+                        # Show the tooltip if we have an explanation
+                        if feature_key in self.feature_explanations:
+                            explanation = self.feature_explanations[feature_key]
+                            QToolTip.showText(QCursor.pos(), explanation)
 
     def update_feature_tables(self, features_df):
         """Update all feature tables with data from the features DataFrame"""
@@ -609,73 +823,163 @@ class EyeMovementAnalysisGUI(QMainWindow):
         # For each category table, update the values
         for category_name, table_info in self.feature_tables.items():
             table = table_info["table"]
-            feature_keys = table_info["features"]
+            feature_data = table_info["features"]
+            is_combined = table_info.get("is_combined", False)
 
             # Clear the table
             table.setRowCount(0)
 
-            # Add rows for each feature in this category
-            for i, feature_key in enumerate(feature_keys):
-                if feature_key in features_df.columns:
-                    row_position = table.rowCount()
-                    table.insertRow(row_position)
-
-                    # Format the feature name to be more readable
-                    display_name = feature_key.replace('_', ' ').title()
-
-                    # Create items
-                    name_item = QTableWidgetItem(display_name)
-
-                    # Set tooltip with explanation if available
-                    if feature_key in self.feature_explanations:
-                        name_item.setToolTip(self.feature_explanations[feature_key])
-
-                    # Format the value based on type
-                    value = features_df[feature_key].iloc[0]
-
-                    # Handle NaN values properly
-                    if pd.isna(value):
-                        value_text = "N/A"
-                    elif isinstance(value, (int, float)):
-                        # Format number with appropriate precision
-                        try:
-                            if float(value).is_integer():
-                                value_text = str(int(value))
-                            else:
-                                value_text = f"{value:.4f}"
-                        except:
-                            # If conversion fails, use the value as is
-                            value_text = str(value)
-                    else:
-                        value_text = str(value)
-
-                    value_item = QTableWidgetItem(value_text)
-
-                    # Add items to table
-                    table.setItem(row_position, 0, name_item)
-                    table.setItem(row_position, 1, value_item)
+            # Handle different table types
+            if is_combined:
+                # This is a combined left/right eye table with 3 columns
+                self._update_combined_table(table, feature_data, features_df)
+            elif isinstance(feature_data[0], dict) and "key" in feature_data[0]:
+                # This is a regular table with named metrics
+                self._update_named_table(table, feature_data, features_df)
+            else:
+                # This is a simple table with direct feature keys
+                self._update_simple_table(table, feature_data, features_df)
+                
+    def _update_combined_table(self, table, feature_data, features_df):
+        """Update a table with left/right eye metrics in separate columns"""
+        for i, item in enumerate(feature_data):
+            # Skip if either left or right key is missing from the feature data
+            if not all(key in features_df.columns for key in [item["left"], item["right"]]):
+                continue
+                
+            row_position = table.rowCount()
+            table.insertRow(row_position)
+            
+            # Create items
+            name_item = QTableWidgetItem(item["name"])
+            
+            # Set tooltips with explanation if available
+            tooltips = []
+            if item["left"] in self.feature_explanations:
+                tooltips.append(self.feature_explanations[item["left"]])
+            if item["right"] in self.feature_explanations:
+                tooltips.append(self.feature_explanations[item["right"]])
+                
+            if tooltips:
+                name_item.setToolTip("\n\n".join(tooltips))
+                
+            # Get and format left eye value
+            left_value = features_df[item["left"]].iloc[0]
+            left_value_text = self._format_value(left_value)
+            left_item = QTableWidgetItem(left_value_text)
+            
+            # Get and format right eye value
+            right_value = features_df[item["right"]].iloc[0]
+            right_value_text = self._format_value(right_value)
+            right_item = QTableWidgetItem(right_value_text)
+            
+            # Add items to table
+            table.setItem(row_position, 0, name_item)
+            table.setItem(row_position, 1, left_item)
+            table.setItem(row_position, 2, right_item)
+    
+    def _update_named_table(self, table, feature_data, features_df):
+        """Update a table with named metrics (non-left/right)"""
+        for i, item in enumerate(feature_data):
+            if item["key"] not in features_df.columns:
+                continue
+                
+            row_position = table.rowCount()
+            table.insertRow(row_position)
+            
+            # Create items
+            name_item = QTableWidgetItem(item["name"])
+            
+            # Set tooltip with explanation if available
+            if item["key"] in self.feature_explanations:
+                name_item.setToolTip(self.feature_explanations[item["key"]])
+                
+            # Get and format value
+            value = features_df[item["key"]].iloc[0]
+            value_text = self._format_value(value)
+            value_item = QTableWidgetItem(value_text)
+            
+            # Add items to table
+            table.setItem(row_position, 0, name_item)
+            table.setItem(row_position, 1, value_item)
+    
+    def _update_simple_table(self, table, feature_keys, features_df):
+        """Update a simple table with direct feature keys"""
+        for i, feature_key in enumerate(feature_keys):
+            if feature_key not in features_df.columns:
+                continue
+                
+            row_position = table.rowCount()
+            table.insertRow(row_position)
+            
+            # Format the feature name to be more readable
+            display_name = feature_key.replace('_', ' ').title()
+            
+            # Create items
+            name_item = QTableWidgetItem(display_name)
+            
+            # Set tooltip with explanation if available
+            if feature_key in self.feature_explanations:
+                name_item.setToolTip(self.feature_explanations[feature_key])
+                
+            # Get and format value
+            value = features_df[feature_key].iloc[0]
+            value_text = self._format_value(value)
+            value_item = QTableWidgetItem(value_text)
+            
+            # Add items to table
+            table.setItem(row_position, 0, name_item)
+            table.setItem(row_position, 1, value_item)
+    
+    def _format_value(self, value):
+        """Format a value for display in the table"""
+        # Handle NaN values properly
+        if pd.isna(value):
+            return "N/A"
+        elif isinstance(value, (int, float)):
+            # Format number with appropriate precision
+            try:
+                if float(value).is_integer():
+                    return str(int(value))
+                else:
+                    return f"{value:.4f}"
+            except:
+                # If conversion fails, use the value as is
+                return str(value)
+        else:
+            return str(value)
 
     def select_files(self):
-        # Determine file filter based on selected type
-        if self.file_type_combo.currentText() == "ASC Files":
-            file_filter = "ASC Files (*.asc)"
-            dialog_title = "Select EyeLink ASC Files"
-        else:  # CSV Files
-            file_filter = "Unified Eye Metrics CSV Files (*unified_eye_metrics*.csv);;All CSV Files (*.csv)"
-            dialog_title = "Select Unified Eye Metrics CSV Files"
+        # Combined file filter for both ASC and CSV files
+        file_filter = "Eye Tracking Files (*.asc *.csv);;ASC Files (*.asc);;CSV Files (*.csv);;All Files (*.*)"
+        dialog_title = "Select Eye Tracking Data Files"
             
-        files, _ = QFileDialog.getOpenFileNames(
+        files, selected_filter = QFileDialog.getOpenFileNames(
             self, dialog_title, "", file_filter
         )
+        
         if files:
             self.file_paths = files
+            
+            # Update the file label
             if len(files) == 1:
                 self.file_label.setText(f"Selected: {os.path.basename(files[0])}")
             else:
                 self.file_label.setText(f"Selected {len(files)} files")
-                
-            # Store the selected file type for processing
-            self.selected_file_type = self.file_type_combo.currentText()
+            
+            # Automatically determine file type based on extension
+            is_csv = True
+            for file_path in files:
+                if file_path.lower().endswith('.asc'):
+                    is_csv = False
+                    break
+            
+            # Set the file type based on extension
+            self.selected_file_type = "CSV Files" if is_csv else "ASC Files"
+            file_type_display = "CSV" if is_csv else "ASC"
+            self.status_label.setText(f"Using {file_type_display} files. Click 'Process Data' to continue.")
+            
+            # Enable process button
             self.update_process_button()
 
     def select_output_dir(self):
@@ -746,6 +1050,30 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         # Update the features display if features were extracted
         if "features" in results and not results["features"].empty:
+            # Store movie-specific features if available
+            if "movie_features" in results:
+                self.movie_features = results["movie_features"]
+                
+                # Clear and populate the feature movie combo box
+                self.feature_movie_combo.clear()
+                self.feature_movie_combo.addItem("All Data")
+                
+                # Add movie names (excluding "All Data" which we already added)
+                for movie_name in self.movie_features.keys():
+                    if movie_name != "All Data":
+                        self.feature_movie_combo.addItem(movie_name)
+                
+                # Enable the combo box if we have multiple movies
+                self.feature_movie_combo.setEnabled(self.feature_movie_combo.count() > 1)
+                
+                # Select "All Data" by default
+                self.feature_movie_combo.setCurrentIndex(0)
+            else:
+                # If no movie features, just update with the overall features
+                self.movie_features = {"All Data": results["features"]}
+                self.feature_movie_combo.setEnabled(False)
+            
+            # Display the features (initially shows "All Data")
             self.update_feature_tables(results["features"])
 
         # Update visualization controls if visualizations were generated
@@ -781,6 +1109,27 @@ class EyeMovementAnalysisGUI(QMainWindow):
         if 'report_path' in results and os.path.exists(results['report_path']):
             self.report_path = results['report_path']
             self.report_btn.setEnabled(True)
+            
+    def feature_movie_selected(self, index):
+        """Handle movie selection in the features tab"""
+        if index < 0 or not hasattr(self, 'movie_features'):
+            return
+            
+        # Get the selected movie name
+        movie_name = self.feature_movie_combo.currentText()
+        
+        # Update the features display with the selected movie's features
+        if movie_name in self.movie_features:
+            # Update feature tables with the selected movie's features
+            self.update_feature_tables(self.movie_features[movie_name])
+            
+            # Update the header to indicate which movie's features are displayed
+            if movie_name == "All Data":
+                header_text = "Eye Movement Features for Autism Research"
+            else:
+                header_text = f"Eye Movement Features: {movie_name}"
+            
+            self.features_header.setText(header_text)
 
     def processing_error(self, error_msg):
         self.status_label.setText("Error occurred during processing")
@@ -849,6 +1198,14 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
     def _load_animation_data_for_movie(self, movie):
         """Load data for the given movie into both animation tabs"""
+        # Prevent reentrant calls that could cause duplicate processes
+        if hasattr(self, '_loading_animation_data') and self._loading_animation_data:
+            print("Animation data loading already in progress, skipping duplicate call")
+            return
+            
+        # Set a flag to prevent reentrant calls
+        self._loading_animation_data = True
+        
         try:
             # Find the data directory for this movie
             data_dir = None
@@ -970,15 +1327,19 @@ class EyeMovementAnalysisGUI(QMainWindow):
                     print(f"Files in directory: {os.listdir(data_dir)}")
                 
                 if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                    self.animated_viz_tab.scanpath_widget.status_label.setText(
-                        f"No data file found for movie: {movie}")
+                    # Status label was removed to save space, silently handle the error
+                    pass
 
         except Exception as e:
             print(f"Error loading data for animated scanpath: {e}")
             import traceback
             traceback.print_exc()  # Print detailed error for debugging
             if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                self.animated_viz_tab.scanpath_widget.status_label.setText(f"Error: {str(e)}")
+                # Status label was removed to save space, silently handle the error
+                pass
+        finally:
+            # Always clear the loading flag to prevent deadlocks
+            self._loading_animation_data = False
 
     def visualization_type_selected(self, index):
         """Show the selected visualization"""
@@ -1045,12 +1406,14 @@ class EyeMovementAnalysisGUI(QMainWindow):
     def show_file_format_help(self):
         """Show detailed help about file formats"""
         help_text = (
-            "<h3>File Format Information</h3>"
+            "<h3>Supported File Formats</h3>"
+            "<p>The application automatically detects the file type based on the file extension.</p>"
             "<p><b>ASC Files:</b> Raw EyeLink eye tracking data files</p>"
             "<ul>"
             "<li>These are the original files exported from the EyeLink eye tracker</li>"
             "<li>They contain raw gaze data, events (fixations, saccades, blinks), and messages</li>"
             "<li>Processing these files takes longer but provides access to all raw data</li>"
+            "<li>File extension: .asc</li>"
             "</ul>"
             "<p><b>CSV Files:</b> Preprocessed unified eye metrics files</p>"
             "<ul>"
@@ -1058,6 +1421,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
             "<li>They contain already extracted eye tracking data in a structured CSV format</li>"
             "<li>Loading these files is faster than processing raw ASC files</li>"
             "<li>Look for files containing 'unified_eye_metrics' in their name</li>"
+            "<li>File extension: .csv</li>"
             "</ul>"
             "<p>For most visualization purposes, either file format will work. Use CSV files for faster loading "
             "when you've already processed the data once.</p>"
@@ -1098,12 +1462,110 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.showMaximized()
 
 
+def parse_args():
+    """Parse command line arguments for the GUI."""
+    import argparse
+    parser = argparse.ArgumentParser(description='Eye Movement Analysis GUI')
+    parser.add_argument('--test_mode', action='store_true', 
+                      help='Run in test mode with predefined files')
+    parser.add_argument('--source_file', type=str, 
+                      help='Path to source file (.asc or .csv) for test mode')
+    parser.add_argument('--destination_folder', type=str, 
+                      help='Output folder for test mode')
+    
+    # For backward compatibility
+    parser.add_argument('--csv_file', type=str, 
+                      help='Path to CSV file for test mode (alternative to --source_file)')
+    parser.add_argument('--use_csv', action='store_true',
+                      help='[Deprecated] File type is now automatically detected')
+    
+    args = parser.parse_args()
+    
+    # If source_file is not set but csv_file is, use csv_file as source_file
+    if not args.source_file and args.csv_file:
+        args.source_file = args.csv_file
+        
+    return args
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = EyeMovementAnalysisGUI()
     
     window.screen_width = 1280
     window.screen_height = 1024
-
-    window.show()
+    
+    # Parse command line arguments
+    args = parse_args()
+    
+    # If in test mode, automatically set up the files
+    if args.test_mode:
+        print("Running in test mode")
+        
+        # Set file if provided - this needs to happen before we create and show the window
+        source_file_path = None
+        if args.source_file:
+            # Try to convert to absolute path if needed
+            file_path = os.path.abspath(args.source_file)
+            print(f"Checking file path: {file_path}")
+            
+            if os.path.exists(file_path):
+                source_file_path = file_path
+                window.file_paths = [file_path]
+                # Update the file label (this will be visible once the window is shown)
+                window.file_label.setText(f"Selected: {os.path.basename(file_path)}")
+                
+                # Automatically determine file type based on extension
+                is_csv = file_path.lower().endswith('.csv')
+                window.selected_file_type = "CSV Files" if is_csv else "ASC Files"
+                file_type = "CSV" if is_csv else "ASC"
+                print(f"Detected file type: {file_type}")
+                
+                # Update status label
+                window.status_label.setText(f"Using {file_type} file: {os.path.basename(file_path)}")
+                
+                # Process events to try to update UI
+                app.processEvents()
+                print(f"Using file: {file_path}")
+            else:
+                print(f"WARNING: File not found at path: {file_path}")
+        
+        # Set output directory if provided
+        dest_path = None
+        if args.destination_folder:
+            # Try to convert to absolute path if needed
+            dest_path = os.path.abspath(args.destination_folder)
+            
+            if not os.path.exists(dest_path):
+                os.makedirs(dest_path, exist_ok=True)
+                
+            window.output_dir = dest_path
+            window.output_label.setText(f"Output: {dest_path}")
+            # Force update the UI to ensure the label is refreshed
+            app.processEvents()
+            print(f"Using output directory: {dest_path}")
+        
+        # Update process button state if both file and directory are specified
+        if source_file_path and dest_path:
+            window.update_process_button()
+            # Force update the UI to ensure the button is enabled
+            app.processEvents()
+            
+            # If both file and output directory are specified, automatically process
+            print("Auto-processing the specified file...")
+            
+            # Use a QTimer for delayed processing but also try immediate processing as backup
+            from PyQt5.QtCore import QTimer
+            
+            # Show the window first to make sure all UI elements are visible
+            window.show()
+            app.processEvents()  # Process events to render the window
+            
+            # Use QTimer to process data after the UI has settled 
+            # This avoids duplicate processing and ensures the UI is ready
+            QTimer.singleShot(200, window.process_data)
+    else:
+        # Only show the window here if not in test mode
+        window.show()
+        
     sys.exit(app.exec_())

@@ -807,10 +807,13 @@ class EyeLinkASCParser:
 
         return saved_files
 
-    def extract_features(self) -> pd.DataFrame:
+    def extract_features(self, movie_name=None) -> pd.DataFrame:
         """
         Extract key features for machine learning analysis focused on autism research.
         Optimized using aggregated statistics calculations.
+
+        Args:
+            movie_name: Optional name of movie to extract features for. If None, use all data.
 
         Returns:
             DataFrame with aggregate features that might be relevant for autism classification
@@ -819,12 +822,64 @@ class EyeLinkASCParser:
 
         # Basic metadata
         features['participant_id'] = os.path.splitext(os.path.basename(self.file_path))[0]
+        
+        # Add movie name to features if specified
+        if movie_name:
+            features['movie_name'] = movie_name
 
-        # Sample statistics
+        # Create DataFrame of all samples once
         if len(self.sample_data) > 0:
-            # Create DataFrame only once
             samples_df = pd.DataFrame(self.sample_data)
-
+            
+            # Filter by movie segment if specified
+            if movie_name and hasattr(self, 'movie_segments') and self.movie_segments:
+                # Find the movie segment that matches the requested movie
+                movie_segment = None
+                for segment in self.movie_segments:
+                    if segment['movie_name'] == movie_name:
+                        movie_segment = segment
+                        break
+                
+                # If movie segment found, filter the samples by time range
+                if movie_segment:
+                    start_time = movie_segment['start_time']
+                    end_time = movie_segment['end_time']
+                    samples_df = samples_df[(samples_df['timestamp'] >= start_time) & 
+                                           (samples_df['timestamp'] <= end_time)]
+                    
+                    # Filter fixations, saccades, and blinks by time range
+                    fix_left_filtered = [f for f in self.fixations['left'] 
+                                        if f['start_time'] >= start_time and f['end_time'] <= end_time]
+                    fix_right_filtered = [f for f in self.fixations['right'] 
+                                         if f['start_time'] >= start_time and f['end_time'] <= end_time]
+                    sacc_left_filtered = [s for s in self.saccades['left'] 
+                                         if s['start_time'] >= start_time and s['end_time'] <= end_time]
+                    sacc_right_filtered = [s for s in self.saccades['right'] 
+                                          if s['start_time'] >= start_time and s['end_time'] <= end_time]
+                    blink_left_filtered = [b for b in self.blinks['left'] 
+                                          if b['start_time'] >= start_time and b['end_time'] <= end_time]
+                    blink_right_filtered = [b for b in self.blinks['right'] 
+                                           if b['start_time'] >= start_time and b['end_time'] <= end_time]
+                else:
+                    # If movie not found, use empty dataframes
+                    print(f"Warning: Movie {movie_name} not found in data. No features will be extracted.")
+                    features_df = pd.DataFrame([features])
+                    return features_df
+            else:
+                # Use all data
+                fix_left_filtered = self.fixations['left']
+                fix_right_filtered = self.fixations['right']
+                sacc_left_filtered = self.saccades['left']
+                sacc_right_filtered = self.saccades['right']
+                blink_left_filtered = self.blinks['left']
+                blink_right_filtered = self.blinks['right']
+            
+            # Skip feature extraction if no samples for the specified movie
+            if samples_df.empty:
+                print(f"Warning: No samples found for movie {movie_name}. No features will be extracted.")
+                features_df = pd.DataFrame([features])
+                return features_df
+                
             # Calculate pupil size statistics using aggregation
             for eye in ['left', 'right']:
                 pupil_col = f'pupil_{eye}'
@@ -888,73 +943,94 @@ class EyeLinkASCParser:
                 features['inter_pupil_distance_mean'] = ipd_stats['mean']
                 features['inter_pupil_distance_std'] = ipd_stats['std']
 
-        # Fixation features - with more efficient calculations
-        for eye in ['left', 'right']:
-            if self.fixations[eye]:
-                fix_df = pd.DataFrame(self.fixations[eye])
-                if not fix_df.empty and 'duration' in fix_df.columns:
-                    features[f'fixation_{eye}_count'] = len(fix_df)
+            # Fixation features - with more efficient calculations
+            for eye in ['left', 'right']:
+                fixations_data = fix_left_filtered if eye == 'left' else fix_right_filtered
+                if fixations_data:
+                    fix_df = pd.DataFrame(fixations_data)
+                    if not fix_df.empty and 'duration' in fix_df.columns:
+                        features[f'fixation_{eye}_count'] = len(fix_df)
 
-                    # Calculate multiple statistics at once
-                    duration_stats = fix_df['duration'].agg(['mean', 'std'])
-                    features[f'fixation_{eye}_duration_mean'] = duration_stats['mean']
-                    features[f'fixation_{eye}_duration_std'] = duration_stats['std']
+                        # Calculate multiple statistics at once
+                        duration_stats = fix_df['duration'].agg(['mean', 'std'])
+                        features[f'fixation_{eye}_duration_mean'] = duration_stats['mean']
+                        features[f'fixation_{eye}_duration_std'] = duration_stats['std']
 
-                    # Calculate fixation rate
-                    if self.sample_data:
-                        # Calculate recording duration in seconds
-                        recording_duration = (self.sample_data[-1]['timestamp'] - self.sample_data[0][
-                            'timestamp']) / 1000
-                        if recording_duration > 0:
-                            features[f'fixation_{eye}_rate'] = len(fix_df) / recording_duration
+                        # Calculate fixation rate
+                        if not samples_df.empty:
+                            # Calculate recording duration in seconds for the filtered data
+                            recording_duration = (samples_df['timestamp'].max() - samples_df['timestamp'].min()) / 1000
+                            if recording_duration > 0:
+                                features[f'fixation_{eye}_rate'] = len(fix_df) / recording_duration
+                            else:
+                                features[f'fixation_{eye}_rate'] = np.nan
                         else:
                             features[f'fixation_{eye}_rate'] = np.nan
-                    else:
-                        features[f'fixation_{eye}_rate'] = np.nan
 
-        # Saccade features - with more efficient calculations
-        for eye in ['left', 'right']:
-            if self.saccades[eye]:
-                sacc_df = pd.DataFrame(self.saccades[eye])
-                if not sacc_df.empty:
-                    features[f'saccade_{eye}_count'] = len(sacc_df)
+            # Saccade features - with more efficient calculations
+            for eye in ['left', 'right']:
+                saccades_data = sacc_left_filtered if eye == 'left' else sacc_right_filtered
+                if saccades_data:
+                    sacc_df = pd.DataFrame(saccades_data)
+                    if not sacc_df.empty:
+                        features[f'saccade_{eye}_count'] = len(sacc_df)
 
-                    # Calculate amplitude statistics
-                    if 'amplitude' in sacc_df.columns:
-                        amp_stats = sacc_df['amplitude'].agg(['mean', 'std'])
-                        features[f'saccade_{eye}_amplitude_mean'] = amp_stats['mean']
-                        features[f'saccade_{eye}_amplitude_std'] = amp_stats['std']
+                        # Calculate amplitude statistics
+                        if 'amplitude' in sacc_df.columns:
+                            amp_stats = sacc_df['amplitude'].agg(['mean', 'std'])
+                            features[f'saccade_{eye}_amplitude_mean'] = amp_stats['mean']
+                            features[f'saccade_{eye}_amplitude_std'] = amp_stats['std']
 
-                    # Calculate duration and velocity
-                    if 'duration' in sacc_df.columns:
-                        features[f'saccade_{eye}_duration_mean'] = sacc_df['duration'].mean()
+                        # Calculate duration and velocity
+                        if 'duration' in sacc_df.columns:
+                            features[f'saccade_{eye}_duration_mean'] = sacc_df['duration'].mean()
 
-                    if 'peak_velocity' in sacc_df.columns:
-                        features[f'saccade_{eye}_peak_velocity_mean'] = sacc_df['peak_velocity'].mean()
+                        if 'peak_velocity' in sacc_df.columns:
+                            features[f'saccade_{eye}_peak_velocity_mean'] = sacc_df['peak_velocity'].mean()
 
-        # Blink features - with more efficient calculations
-        for eye in ['left', 'right']:
-            if self.blinks[eye]:
-                blink_df = pd.DataFrame(self.blinks[eye])
-                if not blink_df.empty and 'duration' in blink_df.columns:
-                    features[f'blink_{eye}_count'] = len(blink_df)
-                    features[f'blink_{eye}_duration_mean'] = blink_df['duration'].mean()
+            # Blink features - with more efficient calculations
+            for eye in ['left', 'right']:
+                blinks_data = blink_left_filtered if eye == 'left' else blink_right_filtered
+                if blinks_data:
+                    blink_df = pd.DataFrame(blinks_data)
+                    if not blink_df.empty and 'duration' in blink_df.columns:
+                        features[f'blink_{eye}_count'] = len(blink_df)
+                        features[f'blink_{eye}_duration_mean'] = blink_df['duration'].mean()
 
-                    # Calculate blink rate
-                    if self.sample_data:
-                        # Calculate recording duration in seconds
-                        recording_duration = (self.sample_data[-1]['timestamp'] - self.sample_data[0][
-                            'timestamp']) / 1000
-                        if recording_duration > 0:
-                            features[f'blink_{eye}_rate'] = len(blink_df) / recording_duration
+                        # Calculate blink rate
+                        if not samples_df.empty:
+                            # Calculate recording duration in seconds for the filtered data
+                            recording_duration = (samples_df['timestamp'].max() - samples_df['timestamp'].min()) / 1000
+                            if recording_duration > 0:
+                                features[f'blink_{eye}_rate'] = len(blink_df) / recording_duration
+                            else:
+                                features[f'blink_{eye}_rate'] = np.nan
                         else:
                             features[f'blink_{eye}_rate'] = np.nan
-                    else:
-                        features[f'blink_{eye}_rate'] = np.nan
 
         # Create a single-row DataFrame
         features_df = pd.DataFrame([features])
         return features_df
+        
+    def extract_features_per_movie(self) -> dict:
+        """
+        Extract features for each movie segment separately.
+        
+        Returns:
+            Dictionary where keys are movie names and values are DataFrames of features
+        """
+        all_features = {}
+        
+        # Extract features for all data
+        all_features["All Data"] = self.extract_features()
+        
+        # Extract features for each movie segment if available
+        if hasattr(self, 'movie_segments') and self.movie_segments:
+            for segment in self.movie_segments:
+                movie_name = segment['movie_name']
+                all_features[movie_name] = self.extract_features(movie_name)
+                
+        return all_features
 
 
 def process_asc_file(file_path: str, output_dir: str = None, extract_features: bool = True,
@@ -1000,7 +1076,43 @@ def process_asc_file(file_path: str, output_dir: str = None, extract_features: b
             results['saved_files'] = parser.save_to_csv(output_dir)
 
     if extract_features:
-        results['features'] = parser.extract_features()
+        # Extract features for all data and per movie
+        all_features = parser.extract_features_per_movie()
+        
+        # Add combined features to results
+        results['features'] = all_features["All Data"]
+        
+        # Add per-movie features to results
+        results['movie_features'] = all_features
+        
+        if output_dir:
+            features_dir = os.path.join(output_dir, 'features')
+            os.makedirs(features_dir, exist_ok=True)
+            
+            # Save combined features
+            base_name = os.path.splitext(os.path.basename(file_path))[0]
+            features_path = os.path.join(features_dir, f"{base_name}_features.csv")
+            all_features["All Data"].to_csv(features_path, index=False)
+            print(f"Saved combined features to {features_path}")
+            results['features_path'] = features_path
+            
+            # Save per-movie features
+            movie_features_paths = {}
+            for movie_name, features_df in all_features.items():
+                if movie_name == "All Data":
+                    continue
+                
+                # Clean movie name for filename
+                clean_movie_name = re.sub(r'[^\w\d-]', '_', 
+                                         os.path.splitext(movie_name)[0] if '.' in movie_name else movie_name)
+                
+                movie_features_path = os.path.join(features_dir, f"{base_name}_features_{clean_movie_name}.csv")
+                features_df.to_csv(movie_features_path, index=False)
+                print(f"Saved features for movie '{movie_name}' to {movie_features_path}")
+                movie_features_paths[movie_name] = movie_features_path
+            
+            results['movie_features_paths'] = movie_features_paths
+
         print("\nExtracted features:")
         print(results['features'])
 
@@ -1165,9 +1277,55 @@ def load_csv_file(file_path: str, output_dir: str = None, extract_features: bool
     
     # Extract features if requested
     if extract_features:
+        # Extract features for all data
         results['features'] = extract_features_from_unified(unified_df, participant_id)
+        
+        # Create a dictionary to store all features (all data + per movie)
+        all_features = {"All Data": results['features']}
+        
+        # Extract features per movie if movie_name column exists
+        if 'movie_name' in unified_df.columns:
+            # Group by movie and extract features for each movie
+            for movie_name, movie_df in unified_df.groupby('movie_name'):
+                if not movie_df.empty:
+                    movie_features = extract_features_from_unified(movie_df, participant_id)
+                    # Add movie name to features
+                    movie_features['movie_name'] = movie_name
+                    all_features[movie_name] = movie_features
+        
+        # Add all features to results
+        results['movie_features'] = all_features
+        
         print("\nExtracted features:")
         print(results['features'])
+        
+        # Save features if output directory provided
+        if output_dir:
+            features_dir = os.path.join(output_dir, 'features')
+            os.makedirs(features_dir, exist_ok=True)
+            
+            # Save combined features
+            features_path = os.path.join(features_dir, f"{participant_id}_features.csv")
+            results['features'].to_csv(features_path, index=False)
+            print(f"Saved combined features to {features_path}")
+            results['features_path'] = features_path
+            
+            # Save per-movie features
+            movie_features_paths = {}
+            for movie_name, features_df in all_features.items():
+                if movie_name == "All Data":
+                    continue
+                
+                # Clean movie name for filename
+                clean_movie_name = re.sub(r'[^\w\d-]', '_', 
+                                         os.path.splitext(movie_name)[0] if '.' in movie_name else movie_name)
+                
+                movie_features_path = os.path.join(features_dir, f"{participant_id}_features_{clean_movie_name}.csv")
+                features_df.to_csv(movie_features_path, index=False)
+                print(f"Saved features for movie '{movie_name}' to {movie_features_path}")
+                movie_features_paths[movie_name] = movie_features_path
+            
+            results['movie_features_paths'] = movie_features_paths
     
     # Save to output directory if requested
     if output_dir:

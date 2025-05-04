@@ -12,13 +12,18 @@ providing flexibility and improved performance when working with previously anal
 
 import numpy as np
 import pandas as pd
+# Configure matplotlib for thread safety
+import matplotlib
+# Only set the backend if it hasn't been set already (to avoid duplication with gui.py)
+if matplotlib.get_backend() != 'Agg':
+    matplotlib.use('Agg')  # Use non-interactive backend for thread safety
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QSlider, QLabel, QGroupBox, QSpinBox, QCheckBox,
-                             QComboBox, QFileDialog)
-from PyQt5.QtCore import Qt, QTimer
+                             QComboBox, QFileDialog, QSizePolicy, QGridLayout)
+from PyQt5.QtCore import Qt, QTimer, QSize
 
 
 class AnimatedScanpathWidget(QWidget):
@@ -45,6 +50,14 @@ class AnimatedScanpathWidget(QWidget):
 
         # Initialize UI
         self.init_ui()
+    
+    def sizeHint(self):
+        """Suggested size for the widget."""
+        return QSize(900, 700)  # Recommended default size
+        
+    def minimumSizeHint(self):
+        """Minimum size for the widget."""
+        return QSize(600, 450)  # Minimum usable size
 
 
 
@@ -141,15 +154,35 @@ class AnimatedScanpathWidget(QWidget):
     def init_ui(self):
         """Initialize the widget UI."""
         layout = QVBoxLayout(self)
+        
+        # Create a container for visualization that can manage minimum size
+        viz_container = QWidget()
+        viz_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        viz_layout = QVBoxLayout(viz_container)
+        viz_layout.setContentsMargins(0, 0, 0, 0)  # No margins to maximize space
 
-        # Create matplotlib figure and canvas
-        self.fig, self.ax = plt.subplots(figsize=(10, 8))
+        # Create matplotlib figure and canvas with adjusted figure size and tight layout
+        self.fig, self.ax = plt.subplots(figsize=(10, 7))
+        self.fig.tight_layout(pad=2.0)  # Increase padding around the plot
         self.canvas = FigureCanvasQTAgg(self.fig)
-        self.canvas.setMinimumHeight(500)
+        # Set size policy to make the canvas expand in both directions
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # Use percentage of window height for minimum height
+        self.canvas.setMinimumHeight(350)
 
-        # Add canvas to layout
-        layout.addWidget(self.canvas)
-
+        # Add canvas to visualization container
+        viz_layout.addWidget(self.canvas)
+        
+        # Add visualization container to main layout
+        layout.addWidget(viz_container, 1)  # Give it stretch factor to take available space
+        
+        # Create a dedicated container for playback controls
+        playback_container = QWidget()
+        playback_container.setMinimumHeight(50)  # Ensure minimum height for controls
+        playback_container.setMaximumHeight(70)  # Limit maximum height
+        playback_layout = QVBoxLayout(playback_container)
+        playback_layout.setContentsMargins(5, 5, 5, 5)
+        
         # Create controls
         controls_layout = QHBoxLayout()
 
@@ -175,166 +208,117 @@ class AnimatedScanpathWidget(QWidget):
         self.time_label = QLabel("0.0s / 0.0s")
         controls_layout.addWidget(self.time_label)
 
-        layout.addLayout(controls_layout)
+        # Add the controls to the playback container
+        playback_layout.addLayout(controls_layout)
+        
+        # Add playback container to main layout
+        layout.addWidget(playback_container)
 
-        # Settings section with proper organization
+        # Settings section with compact layout
         settings_container = QWidget()
         settings_main_layout = QVBoxLayout(settings_container)
-        settings_main_layout.setSpacing(15)  # Increase spacing between groups
-        settings_main_layout.setContentsMargins(10, 10, 10, 10)  # Add container margins
+        settings_main_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Movie selection section
-        movie_selection_container = QWidget()
-        movie_selection_layout = QHBoxLayout(movie_selection_container)
-        movie_selection_layout.setContentsMargins(5, 5, 5, 5)
-        movie_selection_layout.setSpacing(10)
+        # Main container for all controls with horizontal arrangement
+        controls_container = QWidget()
+        controls_container.setMaximumHeight(130)  # Limit the height to maximize plot area
+        main_controls_layout = QHBoxLayout(controls_container)
+        main_controls_layout.setContentsMargins(5, 5, 5, 5)
+        main_controls_layout.setSpacing(10)
         
-        # Movie selection dropdown
-        movie_selection_layout.addWidget(QLabel("Select Movie:"))
+        # === LEFT SECTION: Movie selection and playback settings ===
+        left_section = QWidget()
+        left_section_layout = QVBoxLayout(left_section)
+        left_section_layout.setContentsMargins(0, 0, 0, 0)
+        left_section_layout.setSpacing(5)
+        
+        # Movie selection row
+        movie_selection_layout = QHBoxLayout()
+        movie_selection_layout.addWidget(QLabel("Movie:"))
         self.movie_combo = QComboBox()
         self.movie_combo.setEnabled(False)
         self.movie_combo.currentIndexChanged.connect(self.movie_selected)
-        self.movie_combo.setMinimumWidth(200)
+        self.movie_combo.setMinimumWidth(180)
         movie_selection_layout.addWidget(self.movie_combo, 1)
+        left_section_layout.addLayout(movie_selection_layout)
         
-        # Add the movie selection section to the main layout
-        settings_main_layout.addWidget(movie_selection_container)
+        # Playback settings row
+        playback_row = QHBoxLayout()
         
-        # Animation controls with eye tracking options
-        animation_settings_group = QGroupBox("Animation Controls")
-        animation_settings_group.setMinimumHeight(150)  # Ensure minimum height for better appearance
-        animation_settings_layout = QHBoxLayout(animation_settings_group)
-        animation_settings_layout.setContentsMargins(15, 25, 15, 15)  # Increase padding
-        animation_settings_layout.setSpacing(25)  # Increase spacing between elements
-        
-        # Create a container for playback controls to align them nicely
-        playback_section = QWidget()
-        playback_section_layout = QVBoxLayout(playback_section)
-        playback_section_layout.setContentsMargins(5, 0, 5, 0)
-        playback_section_layout.setSpacing(15)  # Increase vertical spacing
-        
-        # Add a header for this section
-        playback_header = QLabel("Playback Settings")
-        playback_header.setAlignment(Qt.AlignCenter)
-        playback_header.setStyleSheet("font-weight: bold;")
-        playback_section_layout.addWidget(playback_header)
-        
-        # Create horizontal layout for playback controls
-        playback_controls_layout = QHBoxLayout()
-        playback_controls_layout.setSpacing(20)  # Space between speed and trail controls
-        
-        # Playback speed controls
-        speed_layout = QVBoxLayout()
-        speed_layout.setSpacing(8)  # Increase spacing
-        speed_label = QLabel("Playback Speed:")
-        speed_label.setAlignment(Qt.AlignCenter)
-        speed_layout.addWidget(speed_label)
-        
+        # Speed controls
+        playback_row.addWidget(QLabel("Speed:"))
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentText("1x")
         self.speed_combo.currentTextChanged.connect(self.update_playback_speed)
-        self.speed_combo.setMinimumWidth(100)
-        speed_layout.addWidget(self.speed_combo)
-        playback_controls_layout.addLayout(speed_layout)
+        self.speed_combo.setFixedWidth(70)
+        playback_row.addWidget(self.speed_combo)
         
         # Trail length controls
-        trail_layout = QVBoxLayout()
-        trail_layout.setSpacing(8)  # Increase spacing
-        trail_label = QLabel("Trail Length:")
-        trail_label.setAlignment(Qt.AlignCenter)
-        trail_layout.addWidget(trail_label)
-        
+        playback_row.addWidget(QLabel("Trail:"))
         self.trail_spin = QSpinBox()
         self.trail_spin.setRange(10, 500)
         self.trail_spin.setValue(100)
         self.trail_spin.setSingleStep(10)
         self.trail_spin.valueChanged.connect(self.update_trail_length)
-        self.trail_spin.setMinimumWidth(100)
-        trail_layout.addWidget(self.trail_spin)
-        playback_controls_layout.addLayout(trail_layout)
+        self.trail_spin.setFixedWidth(70)
+        playback_row.addWidget(self.trail_spin)
         
-        # Add the horizontal playback controls to the playback section
-        playback_section_layout.addLayout(playback_controls_layout)
+        left_section_layout.addLayout(playback_row)
         
-        # Add the playback section to the main layout
-        animation_settings_layout.addWidget(playback_section, 1)
+        # === MIDDLE SECTION: Eye tracking controls ===
+        middle_section = QWidget()
+        middle_section_layout = QVBoxLayout(middle_section)
+        middle_section_layout.setContentsMargins(0, 0, 0, 0)
+        middle_section_layout.setSpacing(5)
         
-        # Add a vertical separator line
-        separator = QWidget()
-        separator.setFixedWidth(1)
-        separator.setStyleSheet("background-color: #d0d0d0;")  # Light gray line
-        animation_settings_layout.addWidget(separator)
+        # Eye tracking controls in a grid
+        eye_tracking_layout = QGridLayout()
+        eye_tracking_layout.setSpacing(5)
         
-        # Create a container for eye tracking options to align them nicely
-        eye_tracking_section = QWidget()
-        eye_tracking_layout = QVBoxLayout(eye_tracking_section)
-        eye_tracking_layout.setContentsMargins(5, 0, 5, 0)
-        eye_tracking_layout.setSpacing(8)
-        
-        # Add a header for this section
-        eye_tracking_header = QLabel("Eye Tracking Display")
-        eye_tracking_header.setAlignment(Qt.AlignCenter)
-        eye_tracking_header.setStyleSheet("font-weight: bold;")
-        eye_tracking_layout.addWidget(eye_tracking_header)
-        
-        # Add checkboxes with better spacing
-        checkbox_container = QWidget()
-        checkbox_layout = QVBoxLayout(checkbox_container)
-        checkbox_layout.setSpacing(10)  # Increase spacing between checkboxes
-        
+        # Eye tracking checkboxes
         self.show_left_cb = QCheckBox("Show Left Eye")
         self.show_left_cb.setChecked(True)
         self.show_left_cb.toggled.connect(self.redraw)
-        checkbox_layout.addWidget(self.show_left_cb)
+        eye_tracking_layout.addWidget(self.show_left_cb, 0, 0)
         
         self.show_right_cb = QCheckBox("Show Right Eye")
         self.show_right_cb.setChecked(True)
         self.show_right_cb.toggled.connect(self.redraw)
-        checkbox_layout.addWidget(self.show_right_cb)
+        eye_tracking_layout.addWidget(self.show_right_cb, 0, 1)
         
-        # Add some padding at the bottom for alignment
-        checkbox_layout.addStretch(1)
+        middle_section_layout.addLayout(eye_tracking_layout)
         
-        # Add the checkbox container to the eye tracking section
-        eye_tracking_layout.addWidget(checkbox_container)
+        # === RIGHT SECTION: Export options ===
+        right_section = QWidget()
+        right_section_layout = QVBoxLayout(right_section)
+        right_section_layout.setContentsMargins(0, 0, 0, 0)
+        right_section_layout.setSpacing(5)
         
-        # Add the eye tracking section to the main layout
-        animation_settings_layout.addWidget(eye_tracking_section, 1)
+        # Export header and button
+        export_layout = QHBoxLayout()
+        export_layout.addWidget(QLabel("Export:"))
         
-        # Add a vertical separator line
-        separator2 = QWidget()
-        separator2.setFixedWidth(1)
-        separator2.setStyleSheet("background-color: #d0d0d0;")  # Light gray line
-        animation_settings_layout.addWidget(separator2)
-        
-        # Create a container for export options
-        export_section = QWidget()
-        export_layout = QVBoxLayout(export_section)
-        export_layout.setContentsMargins(5, 0, 5, 0)
-        export_layout.setSpacing(8)
-        
-        # Add a header for this section
-        export_header = QLabel("Animation Export")
-        export_header.setAlignment(Qt.AlignCenter)
-        export_header.setStyleSheet("font-weight: bold;")
-        export_layout.addWidget(export_header)
-        
-        # Add export button
+        # Export button
         self.export_button = QPushButton("Save to File")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_animation)
-        self.export_button.setMinimumWidth(100)
+        self.export_button.setFixedWidth(110)
         export_layout.addWidget(self.export_button)
-        
-        # Add some padding at the bottom for alignment
         export_layout.addStretch(1)
         
-        # Add the export section to the main layout
-        animation_settings_layout.addWidget(export_section)
+        right_section_layout.addLayout(export_layout)
         
-        # Add animation controls to main settings layout
-        settings_main_layout.addWidget(animation_settings_group)
+        # Add a spacer to fill the rest of the vertical space
+        right_section_layout.addStretch(1)
+        
+        # Add all sections to the main layout with proportional widths
+        main_controls_layout.addWidget(left_section, 3)     # 3 parts width
+        main_controls_layout.addWidget(middle_section, 2)   # 2 parts width
+        main_controls_layout.addWidget(right_section, 2)    # 2 parts width
+        
+        # Add the controls container to the main settings layout
+        settings_main_layout.addWidget(controls_container)
         
         # Add settings container to main layout
         layout.addWidget(settings_container)
@@ -375,6 +359,10 @@ class AnimatedScanpathWidget(QWidget):
                                          markersize=8, alpha=1.0)
 
         self.ax.legend(loc='upper right')
+        
+        # Apply tight layout to ensure plot fits properly
+        self.fig.tight_layout(pad=2.0)
+        
         self.canvas.draw()
 
 
@@ -760,6 +748,17 @@ class AnimatedScanpathWidget(QWidget):
         current_time = self.data.iloc[self.current_frame]['time_sec']
         self.time_label.setText(f"{current_time:.1f}s / {self.total_duration:.1f}s")
 
+        # Adjust the figure size to match the canvas size
+        if hasattr(self, 'canvas'):
+            width, height = self.canvas.get_width_height()
+            # Only adjust if we have reasonable dimensions
+            if width > 100 and height > 100:
+                self.fig.set_size_inches(width/100, height/100)
+                
+        # Apply tight layout to ensure plot fits properly
+        self.fig.tight_layout(pad=2.0)
+        self.fig.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.1)
+        
         # Redraw canvas
         self.canvas.draw()
 
@@ -769,6 +768,16 @@ class AnimatedScanpathWidget(QWidget):
         self.init_plot()
         if self.data is not None:
             self.ax.set_title(f"Animated Scan Path - {self.movie_name}", fontsize=14)
+            self.update_display()
+            
+        # Apply tight layout to ensure plot fits properly
+        self.fig.tight_layout(pad=2.0)
+        
+    def resizeEvent(self, event):
+        """Handle widget resize events to adjust the figure."""
+        super().resizeEvent(event)
+        # Force a redraw to adjust to the new size
+        if hasattr(self, 'data') and self.data is not None:
             self.update_display()
 
 
