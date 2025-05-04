@@ -505,11 +505,24 @@ class EyeMovementAnalysisGUI(QMainWindow):
         doc_tabs.addTab(feature_doc, "Feature Documentation")
         doc_tabs.addTab(viz_doc, "Visualization Documentation")
 
+        # Import the regular scanpath widget
+        from animated_scanpath import AnimatedScanpathWidget
+        
         # Add tabs to the main tab widget
         tabs.addTab(processing_tab, "Data Processing")
         tabs.addTab(results_tab, "Results & Visualization")
-        self.animated_viz_tab = AnimatedROIScanpathTab()
-        tabs.addTab(self.animated_viz_tab, "Animated Scanpath")
+        
+        # Create regular animated scanpath tab
+        self.animated_scanpath_tab = QWidget()
+        animated_scanpath_layout = QVBoxLayout(self.animated_scanpath_tab)
+        self.animated_scanpath_widget = AnimatedScanpathWidget()
+        animated_scanpath_layout.addWidget(self.animated_scanpath_widget)
+        tabs.addTab(self.animated_scanpath_tab, "Animated Scanpath")
+        
+        # Create ROI scanpath tab
+        self.animated_roi_viz_tab = AnimatedROIScanpathTab()
+        tabs.addTab(self.animated_roi_viz_tab, "Animated ROI Scanpath")
+        
         tabs.addTab(features_tab, "Extracted Features")
         tabs.addTab(documentation_tab, "Documentation")
 
@@ -768,6 +781,10 @@ class EyeMovementAnalysisGUI(QMainWindow):
             # ROI files must be explicitly selected by the user, 
             # not automatically loaded - no automatic ROI detection here
             
+            # Set screen dimensions for animations
+            self.screen_width = 1280
+            self.screen_height = 1024
+            
             # Load data for animated tabs from all movies
             for movie in self.visualization_results.keys():
                 self._load_animation_data_for_movie(movie)
@@ -900,45 +917,58 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
                 if missing_cols:
                     print(f"Animation data missing required columns: {missing_cols}")
-                    if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                        self.animated_viz_tab.scanpath_widget.status_label.setText(
-                            f"Error: Data missing columns: {', '.join(missing_cols)}")
+                    error_msg = f"Error: Data missing required columns: {', '.join(missing_cols)}"
+                    # Update status in both tabs
+                    if hasattr(self, 'animated_roi_viz_tab') and hasattr(self.animated_roi_viz_tab, 'scanpath_widget'):
+                        self.animated_roi_viz_tab.scanpath_widget.status_label.setText(error_msg)
+                    if hasattr(self, 'animated_scanpath_widget'):
+                        self.animated_scanpath_widget.status_label.setText(error_msg)
                 elif data.empty:
                     print("Animation data is empty")
-                    if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                        self.animated_viz_tab.scanpath_widget.status_label.setText("Error: Empty data file")
+                    error_msg = "Error: Empty data file"
+                    # Update status in both tabs
+                    if hasattr(self, 'animated_roi_viz_tab') and hasattr(self.animated_roi_viz_tab, 'scanpath_widget'):
+                        self.animated_roi_viz_tab.scanpath_widget.status_label.setText(error_msg)
+                    if hasattr(self, 'animated_scanpath_widget'):
+                        self.animated_scanpath_widget.status_label.setText(error_msg)
                 else:
-                    # Load data into the animated scanpath widget
-                    if hasattr(self, 'animated_viz_tab'):
-                        success = self.animated_viz_tab.load_data(data, movie, self.screen_width, self.screen_height)
+                    # Load data into both animation widgets
+                    
+                    # 1. Load into ROI animated scanpath widget
+                    if hasattr(self, 'animated_roi_viz_tab'):
+                        success = self.animated_roi_viz_tab.load_data(data, movie, self.screen_width, self.screen_height)
                         if success:
                             print(f"Loaded {len(data)} samples for ROI animated visualization")
                     
-                    # Also load into regular animated scanpath widget
-                    from animated_scanpath import AnimatedScanpathWidget
-                    # Find the animated scanpath tab
-                    for i in range(self.centralWidget().findChild(QTabWidget).count()):
-                        tab = self.centralWidget().findChild(QTabWidget).widget(i)
-                        if hasattr(tab, 'scanpath_widget') and isinstance(tab.scanpath_widget, AnimatedScanpathWidget):
-                            success = tab.scanpath_widget.load_data(data, movie, self.screen_width, self.screen_height)
-                            if success:
-                                print(f"Loaded {len(data)} samples for regular animated visualization")
+                    # 2. Load into regular animated scanpath widget
+                    if hasattr(self, 'animated_scanpath_widget'):
+                        success = self.animated_scanpath_widget.load_data(data, movie, self.screen_width, self.screen_height)
+                        if success:
+                            print(f"Loaded {len(data)} samples for regular animated visualization")
             else:
                 print(f"No data file found for movie: {movie}")
                 print(f"Searched in directory: {data_dir}")
                 if data_dir:
                     print(f"Files in directory: {os.listdir(data_dir)}")
                 
-                if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                    self.animated_viz_tab.scanpath_widget.status_label.setText(
-                        f"No data file found for movie: {movie}")
+                error_msg = f"No data file found for movie: {movie}"
+                # Update status in both tabs
+                if hasattr(self, 'animated_roi_viz_tab') and hasattr(self.animated_roi_viz_tab, 'scanpath_widget'):
+                    self.animated_roi_viz_tab.scanpath_widget.status_label.setText(error_msg)
+                if hasattr(self, 'animated_scanpath_widget'):
+                    self.animated_scanpath_widget.status_label.setText(error_msg)
 
         except Exception as e:
             print(f"Error loading data for animated scanpath: {e}")
             import traceback
             traceback.print_exc()  # Print detailed error for debugging
-            if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                self.animated_viz_tab.scanpath_widget.status_label.setText(f"Error: {str(e)}")
+            
+            error_msg = f"Error: {str(e)}"
+            # Update status in both tabs
+            if hasattr(self, 'animated_roi_viz_tab') and hasattr(self.animated_roi_viz_tab, 'scanpath_widget'):
+                self.animated_roi_viz_tab.scanpath_widget.status_label.setText(error_msg)
+            if hasattr(self, 'animated_scanpath_widget'):
+                self.animated_scanpath_widget.status_label.setText(error_msg)
 
     def visualization_type_selected(self, index):
         """Show the selected visualization"""
