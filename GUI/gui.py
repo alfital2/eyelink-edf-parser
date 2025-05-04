@@ -10,7 +10,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QPixmap, QFont, QCursor, QPalette
 import datetime
 import pandas as pd
-from parser import process_asc_file, process_multiple_files
+from parser import process_asc_file, process_multiple_files, load_csv_file, load_multiple_csv_files
 from eyelink_visualizer import MovieEyeTrackingVisualizer
 # Import documentation module
 from documentation import (get_feature_explanations, get_visualization_explanations,
@@ -24,13 +24,14 @@ class ProcessingThread(QThread):
     processing_complete = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, file_paths, output_dir, visualize, extract_features, generate_report=False):
+    def __init__(self, file_paths, output_dir, visualize, extract_features, generate_report=False, file_type="ASC Files"):
         super().__init__()
         self.file_paths = file_paths
         self.output_dir = output_dir
         self.visualize = visualize
         self.extract_features = extract_features
         self.generate_report = generate_report
+        self.file_type = file_type
 
     def run(self):
         try:
@@ -45,23 +46,41 @@ class ProcessingThread(QThread):
             os.makedirs(self.viz_dir, exist_ok=True)
             os.makedirs(self.feature_dir, exist_ok=True)
 
-            # Process the files using your existing functions
+            # Process the files using the appropriate functions based on file type
             self.update_progress.emit(10)
 
-            if len(self.file_paths) == 1:
-                result = process_asc_file(
-                    self.file_paths[0],
-                    output_dir=self.data_dir,
-                    extract_features=self.extract_features
-                )
-                self.update_progress.emit(50)
+            if self.file_type == "ASC Files":
+                # Process ASC files
+                if len(self.file_paths) == 1:
+                    result = process_asc_file(
+                        self.file_paths[0],
+                        output_dir=self.data_dir,
+                        extract_features=self.extract_features
+                    )
+                    self.update_progress.emit(50)
+                else:
+                    combined_features = process_multiple_files(
+                        self.file_paths,
+                        output_dir=self.data_dir
+                    )
+                    result = {"features": combined_features}
+                    self.update_progress.emit(50)
             else:
-                combined_features = process_multiple_files(
-                    self.file_paths,
-                    output_dir=self.data_dir
-                )
-                result = {"features": combined_features}
-                self.update_progress.emit(50)
+                # Process CSV files
+                if len(self.file_paths) == 1:
+                    result = load_csv_file(
+                        self.file_paths[0],
+                        output_dir=self.data_dir,
+                        extract_features=self.extract_features
+                    )
+                    self.update_progress.emit(50)
+                else:
+                    combined_features = load_multiple_csv_files(
+                        self.file_paths,
+                        output_dir=self.data_dir
+                    )
+                    result = {"features": combined_features}
+                    self.update_progress.emit(50)
 
             # Generate visualizations if requested
             vis_results = {}
@@ -74,6 +93,10 @@ class ProcessingThread(QThread):
                 participant_id = None
                 if len(self.file_paths) == 1:
                     participant_id = os.path.splitext(os.path.basename(self.file_paths[0]))[0]
+                    
+                    # For CSV files, remove '_unified_eye_metrics' from the participant ID if present
+                    if self.file_type == "CSV Files" and participant_id.endswith('_unified_eye_metrics'):
+                        participant_id = participant_id.replace('_unified_eye_metrics', '')
 
                 self.update_progress.emit(60)
                 vis_results = visualizer.process_all_movies(participant_id)
@@ -141,7 +164,7 @@ class AnimatedROIScanpathTab(QWidget):
 class EyeMovementAnalysisGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Eye Movement Analysis for Autism Classification")
+        self.setWindowTitle("Eye Movement Analysis for Autism Classification (ASC/CSV)")
         self.setGeometry(100, 100, 1200, 800)
 
         # File paths and settings
@@ -150,6 +173,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.visualization_results = {}
         self.movie_visualizations = {}
         self.features_data = None
+        self.selected_file_type = "ASC Files"  # Default file type
 
         # Get feature and visualization explanations from the documentation module
         self.feature_explanations = get_feature_explanations()
@@ -276,9 +300,21 @@ class EyeMovementAnalysisGUI(QMainWindow):
         file_layout = QHBoxLayout(file_section)
 
         self.file_label = QLabel("No files selected")
-        select_file_btn = QPushButton("Select ASC File(s)")
+        
+        # Create a combo box for file type selection
+        self.file_type_combo = QComboBox()
+        self.file_type_combo.addItems(["ASC Files", "CSV Files"])
+        self.file_type_combo.setToolTip(
+            "Select which file type to load:\n"
+            "• ASC Files: Raw EyeLink eye tracking data (slower to process but contains all original data)\n"
+            "• CSV Files: Preprocessed unified_eye_metrics files (faster loading of previously analyzed data)"
+        )
+        self.file_type_combo.currentIndexChanged.connect(self.update_file_type_info)
+        
+        select_file_btn = QPushButton("Select File(s)")
         select_file_btn.clicked.connect(self.select_files)
 
+        file_layout.addWidget(self.file_type_combo)
         file_layout.addWidget(select_file_btn)
         file_layout.addWidget(self.file_label, 1)
 
@@ -303,15 +339,34 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         self.visualize_cb = QCheckBox("Generate Visualizations")
         self.visualize_cb.setChecked(True)
+        self.visualize_cb.setToolTip("Generate visualization plots for eye tracking data")
+        
         self.extract_features_cb = QCheckBox("Extract Features")
         self.extract_features_cb.setChecked(True)
+        self.extract_features_cb.setToolTip("Extract statistical features from eye tracking data")
+        
         self.generate_report_cb = QCheckBox("Generate HTML Report")
         self.generate_report_cb.setChecked(True)
-
+        self.generate_report_cb.setToolTip("Create an HTML report with visualization results")
+        
+        # Create a help button for file format information
+        file_format_help = QPushButton("?")
+        file_format_help.setFixedSize(25, 25)
+        file_format_help.setToolTip(
+            "File Format Information:\n\n"
+            "ASC Files: Raw EyeLink eye tracking data files.\n"
+            "These are the original files from the eye tracker.\n\n"
+            "CSV Files: Preprocessed unified eye metrics files.\n"
+            "These are generated after processing ASC files and contain\n"
+            "already extracted eye tracking data in CSV format."
+        )
+        file_format_help.clicked.connect(self.show_file_format_help)
+        
         options_layout.addWidget(self.visualize_cb)
         options_layout.addWidget(self.extract_features_cb)
         options_layout.addWidget(self.generate_report_cb)
         options_layout.addStretch()
+        options_layout.addWidget(file_format_help)
 
         processing_layout.addWidget(options_section)
 
@@ -601,15 +656,26 @@ class EyeMovementAnalysisGUI(QMainWindow):
                     table.setItem(row_position, 1, value_item)
 
     def select_files(self):
+        # Determine file filter based on selected type
+        if self.file_type_combo.currentText() == "ASC Files":
+            file_filter = "ASC Files (*.asc)"
+            dialog_title = "Select EyeLink ASC Files"
+        else:  # CSV Files
+            file_filter = "Unified Eye Metrics CSV Files (*unified_eye_metrics*.csv);;All CSV Files (*.csv)"
+            dialog_title = "Select Unified Eye Metrics CSV Files"
+            
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Select ASC Files", "", "ASC Files (*.asc)"
+            self, dialog_title, "", file_filter
         )
         if files:
             self.file_paths = files
             if len(files) == 1:
-                self.file_label.setText(f"Selected: {files[0]}")
+                self.file_label.setText(f"Selected: {os.path.basename(files[0])}")
             else:
                 self.file_label.setText(f"Selected {len(files)} files")
+                
+            # Store the selected file type for processing
+            self.selected_file_type = self.file_type_combo.currentText()
             self.update_process_button()
 
     def select_output_dir(self):
@@ -625,6 +691,13 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.process_btn.setEnabled(
             bool(self.file_paths) and bool(self.output_dir)
         )
+        
+    def update_file_type_info(self, index):
+        """Update status label with information about the selected file type"""
+        if index == 0:  # ASC Files
+            self.status_label.setText("ASC Files: Original EyeLink data files. Processing may take longer but includes all raw data.")
+        else:  # CSV Files
+            self.status_label.setText("CSV Files: Pre-processed data files. Much faster loading for visualizations and analysis.")
 
     def process_data(self):
         # Disable UI elements during processing
@@ -632,13 +705,14 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.progress_bar.setValue(0)
         self.status_label.setText("Processing...")
 
-        # Start processing thread
+        # Start processing thread with the selected file type
         self.processing_thread = ProcessingThread(
             self.file_paths,
             self.output_dir,
             self.visualize_cb.isChecked(),
             self.extract_features_cb.isChecked(),
-            self.generate_report_cb.isChecked()
+            self.generate_report_cb.isChecked(),
+            self.selected_file_type
         )
 
         # Connect signals
@@ -693,6 +767,11 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 
             # ROI files must be explicitly selected by the user, 
             # not automatically loaded - no automatic ROI detection here
+            
+            # Set screen dimensions for visualizations if not already set
+            if not hasattr(self, 'screen_width') or not hasattr(self, 'screen_height'):
+                self.screen_width = 1280
+                self.screen_height = 1024
             
             # Load data for animated tabs from all movies
             for movie in self.visualization_results.keys():
@@ -777,21 +856,28 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
             # First check if we have an output directory
             if hasattr(self, 'output_dir') and self.output_dir:
-                # Look for movie folder in the output directory structure
-                for root, dirs, files in os.walk(self.output_dir):
-                    if os.path.basename(root) == movie:
-                        # Found the movie directory
-                        data_dir = root
-                        # Look for the unified eye metrics CSV file with the movie name in it
-                        for file in files:
-                            # Match CSV files that contain both 'unified_eye_metrics' and the movie name
-                            if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
-                                data_path = os.path.join(root, file)
-                                print(f"Found data file: {data_path}")
-                                break
-                        # If we found a data file, stop searching
-                        if data_path:
+                # Look for data directory
+                data_dir = os.path.join(self.output_dir, 'data')
+                if os.path.exists(data_dir):
+                    # First, check for exact match with movie name
+                    for file in os.listdir(data_dir):
+                        if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
+                            data_path = os.path.join(data_dir, file)
+                            print(f"Found data file with exact match: {data_path}")
                             break
+
+                    # If no exact match, check for any unified_eye_metrics file
+                    if not data_path:
+                        for file in os.listdir(data_dir):
+                            if 'unified_eye_metrics' in file and file.endswith('.csv'):
+                                data_path = os.path.join(data_dir, file)
+                                print(f"Found data file without exact match: {data_path}")
+                                # Extract real movie name from filename if possible
+                                parts = file.split('_unified_eye_metrics_')
+                                if len(parts) > 1 and '_' in parts[1]:
+                                    real_movie_name = parts[1].split('.')[0]  
+                                    print(f"Detected movie name from file: {real_movie_name}")
+                                break
 
             # If we still don't have a data directory, try to extract it from visualization paths
             if not data_dir or not data_path:
@@ -801,24 +887,56 @@ class EyeMovementAnalysisGUI(QMainWindow):
                         viz_dir = os.path.dirname(paths[0])
                         # The movie directory is usually the parent of the plots directory
                         potential_data_dir = os.path.dirname(viz_dir)
-                        if os.path.basename(potential_data_dir) == movie:
+                        if os.path.exists(potential_data_dir):
                             data_dir = potential_data_dir
-                            # Look for any CSV file in this directory that contains 'unified_eye_metrics'
-                            # and the movie name
+                            # First look for CSV files with exact movie name match
                             for file in os.listdir(data_dir):
                                 if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
                                     data_path = os.path.join(data_dir, file)
-                                    print(f"Found data file: {data_path}")
+                                    print(f"Found data file with exact match: {data_path}")
                                     break
+                                    
+                            # If no exact match, try any unified_eye_metrics file
+                            if not data_path:
+                                for file in os.listdir(data_dir):
+                                    if 'unified_eye_metrics' in file and file.endswith('.csv'):
+                                        data_path = os.path.join(data_dir, file)
+                                        print(f"Found data file without exact match: {data_path}")
+                                        # Extract real movie name from filename if possible
+                                        parts = file.split('_unified_eye_metrics_')
+                                        if len(parts) > 1 and '_' in parts[1]:
+                                            real_movie_name = parts[1].split('.')[0]
+                                            print(f"Detected movie name from file: {real_movie_name}")
+                                        break
+                            
                             # If we found a data file, stop searching
                             if data_path:
                                 break
+
+            # Make sure we have the screen dimensions initialized
+            if not hasattr(self, 'screen_width') or not hasattr(self, 'screen_height'):
+                self.screen_width = 1280
+                self.screen_height = 1024
 
             # Load the data if found
             if data_path and os.path.exists(data_path):
                 print(f"Loading animation data from: {data_path}")
                 import pandas as pd  # Ensure pandas is imported here
                 data = pd.read_csv(data_path)
+
+                # Determine the actual movie name to use
+                display_movie_name = movie
+                
+                # Try to extract the real movie name from the file path if not found above
+                if not 'real_movie_name' in locals():
+                    parts = os.path.basename(data_path).split('_unified_eye_metrics_')
+                    if len(parts) > 1 and '.' in parts[1]:
+                        real_movie_name = parts[1].split('.')[0]
+                        display_movie_name = real_movie_name
+                        print(f"Extracted movie name from path: {display_movie_name}")
+                else:
+                    display_movie_name = real_movie_name
+                    print(f"Using previously detected movie name: {display_movie_name}")
 
                 # Check if necessary columns are present
                 required_cols = ['timestamp', 'x_left', 'y_left', 'x_right', 'y_right']
@@ -836,19 +954,15 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 else:
                     # Load data into the animated scanpath widget
                     if hasattr(self, 'animated_viz_tab'):
-                        success = self.animated_viz_tab.load_data(data, movie, self.screen_width, self.screen_height)
+                        # If the widget isn't already a combined scanpath widget, 
+                        # import the module and confirm it's the correct import
+                        from animated_scanpath import AnimatedScanpathWidget
+                        
+                        # Load the data - this will populate both the normal scanpath
+                        # view and any ROI data if available - use the actual movie name from the file
+                        success = self.animated_viz_tab.load_data(data, display_movie_name, self.screen_width, self.screen_height)
                         if success:
-                            print(f"Loaded {len(data)} samples for ROI animated visualization")
-                    
-                    # Also load into regular animated scanpath widget
-                    from animated_scanpath import AnimatedScanpathWidget
-                    # Find the animated scanpath tab
-                    for i in range(self.centralWidget().findChild(QTabWidget).count()):
-                        tab = self.centralWidget().findChild(QTabWidget).widget(i)
-                        if hasattr(tab, 'scanpath_widget') and isinstance(tab.scanpath_widget, AnimatedScanpathWidget):
-                            success = tab.scanpath_widget.load_data(data, movie, self.screen_width, self.screen_height)
-                            if success:
-                                print(f"Loaded {len(data)} samples for regular animated visualization")
+                            print(f"Loaded {len(data)} samples for animated visualization of {display_movie_name}")
             else:
                 print(f"No data file found for movie: {movie}")
                 print(f"Searched in directory: {data_dir}")
@@ -927,6 +1041,28 @@ class EyeMovementAnalysisGUI(QMainWindow):
         else:
             QMessageBox.warning(self, "Report Not Found",
                                 "The visualization report could not be found.")
+    
+    def show_file_format_help(self):
+        """Show detailed help about file formats"""
+        help_text = (
+            "<h3>File Format Information</h3>"
+            "<p><b>ASC Files:</b> Raw EyeLink eye tracking data files</p>"
+            "<ul>"
+            "<li>These are the original files exported from the EyeLink eye tracker</li>"
+            "<li>They contain raw gaze data, events (fixations, saccades, blinks), and messages</li>"
+            "<li>Processing these files takes longer but provides access to all raw data</li>"
+            "</ul>"
+            "<p><b>CSV Files:</b> Preprocessed unified eye metrics files</p>"
+            "<ul>"
+            "<li>These are generated after processing ASC files</li>"
+            "<li>They contain already extracted eye tracking data in a structured CSV format</li>"
+            "<li>Loading these files is faster than processing raw ASC files</li>"
+            "<li>Look for files containing 'unified_eye_metrics' in their name</li>"
+            "</ul>"
+            "<p>For most visualization purposes, either file format will work. Use CSV files for faster loading "
+            "when you've already processed the data once.</p>"
+        )
+        QMessageBox.information(self, "File Format Help", help_text)
 
     def save_features(self):
         """Save the extracted features to a CSV file"""

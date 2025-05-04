@@ -66,8 +66,9 @@ The GUI provides intuitive access to:
 ### Command Line Options
 
 ```
---input, -i         Path to ASC file or directory containing ASC files
+--input, -i         Path to ASC/CSV file or directory containing ASC/CSV files
 --output, -o        Output directory for parsed data and visualizations (default: 'output')
+--use_csv           Process CSV files instead of ASC files (faster loading of pre-processed data)
 --visualize         Generate visualizations for each movie
 --report            Generate comprehensive HTML visualization report
 --screen_width      Screen width in pixels (default: 1280)
@@ -209,6 +210,33 @@ python main.py --input path/to/directory/ --output results --no_visualize
 ```bash
 python main.py --input path/to/directory/ --output results --visualize --report
 ```
+
+### Load Pre-processed CSV Files (Faster)
+
+First, process your ASC files with the unified_only option to generate CSV files:
+
+```bash
+python main.py --input path/to/directory/ --output results --unified_only
+```
+
+Later, you can load these CSV files directly (much faster than re-processing ASC files):
+
+```bash
+python main.py --input path/to/results/data/ --output new_results --use_csv --visualize
+```
+
+#### Using CSV Files With The GUI
+
+For an even more convenient workflow with pre-processed data:
+
+1. Launch the GUI: `python GUI/gui.py`
+2. Select "CSV Files" from the dropdown in the Data Processing tab
+3. Click "Select File(s)" and choose your unified_eye_metrics*.csv files
+4. Set an output directory and processing options
+5. Click "Process Data" to quickly load and visualize the pre-processed data
+
+This approach significantly speeds up the workflow when you've already processed ASC files
+and want to revisit visualizations or perform additional analysis.
 
 ### Using the Animated Scanpath Feature
 

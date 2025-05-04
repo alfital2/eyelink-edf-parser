@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import re
 import os
-from typing import Dict, List
+from typing import Dict, List, Union, Optional
 
 
 class EyeLinkASCParser:
@@ -1063,3 +1063,344 @@ def process_multiple_files(file_paths: List[str], output_dir: str = None,
         return pd.concat(all_features, ignore_index=True)
 
     return pd.DataFrame()
+
+
+def load_csv_file(file_path: str, output_dir: str = None, extract_features: bool = True) -> dict:
+    """
+    Load a unified eye metrics CSV file and return it in the same format as process_asc_file.
+    
+    This function allows for directly loading a previously processed eye metrics CSV file,
+    bypassing the slow ASC parsing process.
+    
+    Args:
+        file_path: Path to the unified eye metrics CSV file
+        output_dir: Directory to save output files (if needed)
+        extract_features: Whether to extract aggregate features for ML
+    
+    Returns:
+        Dictionary with loaded data in the same format as process_asc_file
+    """
+    print(f"Loading CSV file: {file_path}")
+    
+    # Check if the file exists and has the right extension
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"CSV file not found: {file_path}")
+    
+    if not file_path.lower().endswith('.csv'):
+        raise ValueError(f"Expected a CSV file, got: {file_path}")
+    
+    # Load the unified eye metrics DataFrame
+    unified_df = pd.read_csv(file_path)
+    
+    # Get the participant ID from the filename
+    participant_id = os.path.splitext(os.path.basename(file_path))[0].replace('_unified_eye_metrics', '')
+    
+    # Initialize empty dataframes for the standard outputs
+    # The main value is in the unified_eye_metrics DataFrame, but we'll create placeholders for the others
+    dataframes = {
+        'unified_eye_metrics': unified_df,
+        'samples': pd.DataFrame(),
+        'messages': pd.DataFrame(),
+        'frames': pd.DataFrame()
+    }
+    
+    # If the unified DataFrame has fixation, saccade, or blink flags, we can recreate those events
+    event_dfs = {}
+    
+    # Extract fixation events if we have the appropriate columns
+    if {'is_fixation_left', 'timestamp'}.issubset(unified_df.columns):
+        fixations_left = extract_events_from_unified(unified_df, 'is_fixation_left', 'left')
+        if not fixations_left.empty:
+            event_dfs['fixations_left'] = fixations_left
+            
+    if {'is_fixation_right', 'timestamp'}.issubset(unified_df.columns):
+        fixations_right = extract_events_from_unified(unified_df, 'is_fixation_right', 'right')
+        if not fixations_right.empty:
+            event_dfs['fixations_right'] = fixations_right
+    
+    # Extract saccade events
+    if {'is_saccade_left', 'timestamp'}.issubset(unified_df.columns):
+        saccades_left = extract_events_from_unified(unified_df, 'is_saccade_left', 'left')
+        if not saccades_left.empty:
+            event_dfs['saccades_left'] = saccades_left
+            
+    if {'is_saccade_right', 'timestamp'}.issubset(unified_df.columns):
+        saccades_right = extract_events_from_unified(unified_df, 'is_saccade_right', 'right')
+        if not saccades_right.empty:
+            event_dfs['saccades_right'] = saccades_right
+    
+    # Extract blink events
+    if {'is_blink_left', 'timestamp'}.issubset(unified_df.columns):
+        blinks_left = extract_events_from_unified(unified_df, 'is_blink_left', 'left')
+        if not blinks_left.empty:
+            event_dfs['blinks_left'] = blinks_left
+            
+    if {'is_blink_right', 'timestamp'}.issubset(unified_df.columns):
+        blinks_right = extract_events_from_unified(unified_df, 'is_blink_right', 'right')
+        if not blinks_right.empty:
+            event_dfs['blinks_right'] = blinks_right
+    
+    # Add the event dataframes to our results
+    dataframes.update(event_dfs)
+    
+    # Create a basic summary from what we have
+    summary = {
+        'samples': len(unified_df),
+        'fixations': sum([len(df) for name, df in event_dfs.items() if 'fixation' in name]),
+        'saccades': sum([len(df) for name, df in event_dfs.items() if 'saccade' in name]),
+        'blinks': sum([len(df) for name, df in event_dfs.items() if 'blink' in name]),
+        'messages': 0,
+        'frames': 0
+    }
+    
+    # Count unique frames if we have frame numbers
+    if 'frame_number' in unified_df.columns:
+        summary['frames'] = unified_df['frame_number'].nunique()
+    
+    # Prepare the results dictionary
+    results = {
+        'summary': summary,
+        'dataframes': dataframes
+    }
+    
+    # Extract features if requested
+    if extract_features:
+        results['features'] = extract_features_from_unified(unified_df, participant_id)
+        print("\nExtracted features:")
+        print(results['features'])
+    
+    # Save to output directory if requested
+    if output_dir:
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        # Copy the unified metrics file to the output directory
+        output_path = os.path.join(output_dir, os.path.basename(file_path))
+        if output_path != file_path:  # Don't copy if it's the same file
+            unified_df.to_csv(output_path, index=False)
+            results['saved_files'] = [output_path]
+            print(f"Saved unified eye metrics to {output_path}")
+    
+    return results
+
+
+def extract_events_from_unified(unified_df: pd.DataFrame, flag_column: str, eye: str) -> pd.DataFrame:
+    """
+    Extract event data (fixations, saccades, blinks) from the unified DataFrame based on flag columns.
+    
+    Args:
+        unified_df: The unified eye metrics DataFrame
+        flag_column: The column with boolean flags for this event type (e.g., 'is_fixation_left')
+        eye: 'left' or 'right' - which eye this data is for
+        
+    Returns:
+        DataFrame containing the extracted events
+    """
+    # Get consecutive runs of True values in the flag column
+    event_df = unified_df[unified_df[flag_column]]
+    
+    if event_df.empty:
+        return pd.DataFrame()
+    
+    # Group consecutive events
+    event_df = event_df.copy()
+    event_df['group'] = (event_df['timestamp'].diff() > 100).cumsum()
+    
+    # For each group, create an event
+    events = []
+    
+    for group_id, group_df in event_df.groupby('group'):
+        # Calculate basic metrics
+        start_time = group_df['timestamp'].min()
+        end_time = group_df['timestamp'].max()
+        duration = end_time - start_time
+        
+        event = {
+            'start_time': start_time, 
+            'end_time': end_time,
+            'duration': duration
+        }
+        
+        # For fixations, add position and pupil size
+        if 'fixation' in flag_column:
+            x_col, y_col, pupil_col = f'x_{eye}', f'y_{eye}', f'pupil_{eye}'
+            if {x_col, y_col, pupil_col}.issubset(group_df.columns):
+                event['x'] = group_df[x_col].mean()
+                event['y'] = group_df[y_col].mean()
+                event['pupil'] = group_df[pupil_col].mean()
+        
+        # For saccades, add start/end positions and amplitude
+        if 'saccade' in flag_column:
+            x_col, y_col = f'x_{eye}', f'y_{eye}'
+            if {x_col, y_col}.issubset(group_df.columns):
+                event['start_x'] = group_df[x_col].iloc[0]
+                event['start_y'] = group_df[y_col].iloc[0]
+                event['end_x'] = group_df[x_col].iloc[-1]
+                event['end_y'] = group_df[y_col].iloc[-1]
+                
+                # Calculate amplitude
+                dx = event['end_x'] - event['start_x']
+                dy = event['end_y'] - event['start_y']
+                event['amplitude'] = np.sqrt(dx**2 + dy**2)
+                
+                # Add peak velocity if available
+                vel_col = f'gaze_velocity_{eye}'
+                if vel_col in group_df.columns:
+                    event['peak_velocity'] = group_df[vel_col].max()
+        
+        events.append(event)
+    
+    return pd.DataFrame(events)
+
+
+def extract_features_from_unified(unified_df: pd.DataFrame, participant_id: str) -> pd.DataFrame:
+    """
+    Extract features from a unified eye metrics DataFrame.
+    This is similar to the extract_features method in EyeLinkASCParser but works directly with a DataFrame.
+    
+    Args:
+        unified_df: The unified eye metrics DataFrame
+        participant_id: The ID of the participant
+        
+    Returns:
+        DataFrame with extracted features
+    """
+    features = {}
+    
+    # Basic metadata
+    features['participant_id'] = participant_id
+    
+    # Calculate pupil size statistics
+    for eye in ['left', 'right']:
+        pupil_col = f'pupil_{eye}'
+        if pupil_col in unified_df.columns:
+            # Calculate all statistics at once
+            pupil_stats = unified_df[pupil_col].agg(['mean', 'std', 'min', 'max'])
+            features[f'pupil_{eye}_mean'] = pupil_stats['mean']
+            features[f'pupil_{eye}_std'] = pupil_stats['std']
+            features[f'pupil_{eye}_min'] = pupil_stats['min']
+            features[f'pupil_{eye}_max'] = pupil_stats['max']
+    
+    # Gaze position variability (reflects scan patterns)
+    for eye in ['left', 'right']:
+        x_col, y_col = f'x_{eye}', f'y_{eye}'
+        if x_col in unified_df.columns and y_col in unified_df.columns:
+            # Calculate standard deviations
+            gaze_stats_x = unified_df[x_col].agg(['std', 'min', 'max'])
+            gaze_stats_y = unified_df[y_col].agg(['std', 'min', 'max'])
+
+            features[f'gaze_{eye}_x_std'] = gaze_stats_x['std']
+            features[f'gaze_{eye}_y_std'] = gaze_stats_y['std']
+
+            # Calculate dispersion (total area covered by gaze)
+            x_range = gaze_stats_x['max'] - gaze_stats_x['min']
+            y_range = gaze_stats_y['max'] - gaze_stats_y['min']
+            features[f'gaze_{eye}_dispersion'] = x_range * y_range if not np.isnan(x_range) and not np.isnan(
+                y_range) else np.nan
+    
+    # Head movement features
+    if 'head_movement_magnitude' in unified_df.columns:
+        head_movement_stats = unified_df['head_movement_magnitude'].agg(['mean', 'std', 'max'])
+        features['head_movement_mean'] = head_movement_stats['mean']
+        features['head_movement_std'] = head_movement_stats['std']
+        features['head_movement_max'] = head_movement_stats['max']
+    
+    # Inter-pupil distance statistics
+    if 'inter_pupil_distance' in unified_df.columns:
+        ipd_stats = unified_df['inter_pupil_distance'].agg(['mean', 'std'])
+        features['inter_pupil_distance_mean'] = ipd_stats['mean']
+        features['inter_pupil_distance_std'] = ipd_stats['std']
+    
+    # Event statistics (count, rate, duration)
+    for event_type in ['fixation', 'saccade', 'blink']:
+        for eye in ['left', 'right']:
+            flag_col = f'is_{event_type}_{eye}'
+            if flag_col in unified_df.columns:
+                # Count events (transitions from False to True)
+                event_starts = (unified_df[flag_col] & ~unified_df[flag_col].shift(1).fillna(False)).sum()
+                features[f'{event_type}_{eye}_count'] = event_starts
+                
+                # Calculate event rate (events per second)
+                if len(unified_df) > 1:
+                    duration_sec = (unified_df['timestamp'].max() - unified_df['timestamp'].min()) / 1000
+                    features[f'{event_type}_{eye}_rate'] = event_starts / duration_sec if duration_sec > 0 else np.nan
+                
+                # Calculate mean duration of events
+                # First, label each event with a group number
+                is_event = unified_df[flag_col]
+                if is_event.sum() > 0:
+                    event_df = unified_df[is_event].copy()
+                    event_df['group'] = (event_df['timestamp'].diff() > 100).cumsum()
+                    
+                    # For each group, calculate duration
+                    durations = []
+                    for _, group in event_df.groupby('group'):
+                        duration = group['timestamp'].max() - group['timestamp'].min()
+                        durations.append(duration)
+                    
+                    if durations:
+                        features[f'{event_type}_{eye}_duration_mean'] = np.mean(durations)
+    
+    # Create a single-row DataFrame
+    features_df = pd.DataFrame([features])
+    return features_df
+
+
+def load_multiple_csv_files(file_paths: List[str], output_dir: str = None) -> pd.DataFrame:
+    """
+    Load multiple unified eye metrics CSV files and combine their features.
+    
+    Args:
+        file_paths: List of paths to unified eye metrics CSV files
+        output_dir: Directory to save output files (if needed)
+    
+    Returns:
+        DataFrame with combined features from all files
+    """
+    all_features = []
+    all_unified_metrics = []
+    
+    for file_path in file_paths:
+        print(f"\nLoading CSV file: {file_path}")
+        try:
+            result = load_csv_file(file_path, output_dir)
+            
+            if 'features' in result:
+                all_features.append(result['features'])
+            
+            # Collect unified metrics dataframes
+            if 'dataframes' in result and 'unified_eye_metrics' in result['dataframes']:
+                # Add a participant ID column
+                participant_id = os.path.splitext(os.path.basename(file_path))[0].replace('_unified_eye_metrics', '')
+                df = result['dataframes']['unified_eye_metrics'].copy()
+                if 'participant_id' not in df.columns:
+                    df['participant_id'] = participant_id
+                all_unified_metrics.append(df)
+        except Exception as e:
+            print(f"Error processing file {file_path}: {e}")
+            continue
+    
+    # Combine all features into a single DataFrame
+    if all_features:
+        combined_features = pd.concat(all_features, ignore_index=True)
+        
+        # Save combined features if output_dir is provided
+        if output_dir:
+            combined_path = os.path.join(output_dir, "combined_features.csv")
+            combined_features.to_csv(combined_path, index=False)
+            print(f"\nSaved combined features to {combined_path}")
+    else:
+        combined_features = pd.DataFrame()
+    
+    # Combine all unified metrics
+    if all_unified_metrics:
+        combined_metrics = pd.concat(all_unified_metrics, ignore_index=True)
+        
+        # Save combined unified metrics if output_dir is provided
+        if output_dir:
+            combined_metrics_path = os.path.join(output_dir, "all_participants_unified_metrics.csv")
+            combined_metrics.to_csv(combined_metrics_path, index=False)
+            print(f"\nSaved combined unified metrics from all participants to {combined_metrics_path}")
+    
+    # Return the combined features (for ML/DL analysis)
+    return combined_features
