@@ -856,21 +856,28 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
             # First check if we have an output directory
             if hasattr(self, 'output_dir') and self.output_dir:
-                # Look for movie folder in the output directory structure
-                for root, dirs, files in os.walk(self.output_dir):
-                    if os.path.basename(root) == movie:
-                        # Found the movie directory
-                        data_dir = root
-                        # Look for the unified eye metrics CSV file with the movie name in it
-                        for file in files:
-                            # Match CSV files that contain both 'unified_eye_metrics' and the movie name
-                            if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
-                                data_path = os.path.join(root, file)
-                                print(f"Found data file: {data_path}")
-                                break
-                        # If we found a data file, stop searching
-                        if data_path:
+                # Look for data directory
+                data_dir = os.path.join(self.output_dir, 'data')
+                if os.path.exists(data_dir):
+                    # First, check for exact match with movie name
+                    for file in os.listdir(data_dir):
+                        if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
+                            data_path = os.path.join(data_dir, file)
+                            print(f"Found data file with exact match: {data_path}")
                             break
+
+                    # If no exact match, check for any unified_eye_metrics file
+                    if not data_path:
+                        for file in os.listdir(data_dir):
+                            if 'unified_eye_metrics' in file and file.endswith('.csv'):
+                                data_path = os.path.join(data_dir, file)
+                                print(f"Found data file without exact match: {data_path}")
+                                # Extract real movie name from filename if possible
+                                parts = file.split('_unified_eye_metrics_')
+                                if len(parts) > 1 and '_' in parts[1]:
+                                    real_movie_name = parts[1].split('.')[0]  
+                                    print(f"Detected movie name from file: {real_movie_name}")
+                                break
 
             # If we still don't have a data directory, try to extract it from visualization paths
             if not data_dir or not data_path:
@@ -880,15 +887,28 @@ class EyeMovementAnalysisGUI(QMainWindow):
                         viz_dir = os.path.dirname(paths[0])
                         # The movie directory is usually the parent of the plots directory
                         potential_data_dir = os.path.dirname(viz_dir)
-                        if os.path.basename(potential_data_dir) == movie:
+                        if os.path.exists(potential_data_dir):
                             data_dir = potential_data_dir
-                            # Look for any CSV file in this directory that contains 'unified_eye_metrics'
-                            # and the movie name
+                            # First look for CSV files with exact movie name match
                             for file in os.listdir(data_dir):
                                 if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
                                     data_path = os.path.join(data_dir, file)
-                                    print(f"Found data file: {data_path}")
+                                    print(f"Found data file with exact match: {data_path}")
                                     break
+                                    
+                            # If no exact match, try any unified_eye_metrics file
+                            if not data_path:
+                                for file in os.listdir(data_dir):
+                                    if 'unified_eye_metrics' in file and file.endswith('.csv'):
+                                        data_path = os.path.join(data_dir, file)
+                                        print(f"Found data file without exact match: {data_path}")
+                                        # Extract real movie name from filename if possible
+                                        parts = file.split('_unified_eye_metrics_')
+                                        if len(parts) > 1 and '_' in parts[1]:
+                                            real_movie_name = parts[1].split('.')[0]
+                                            print(f"Detected movie name from file: {real_movie_name}")
+                                        break
+                            
                             # If we found a data file, stop searching
                             if data_path:
                                 break
@@ -903,6 +923,20 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 print(f"Loading animation data from: {data_path}")
                 import pandas as pd  # Ensure pandas is imported here
                 data = pd.read_csv(data_path)
+
+                # Determine the actual movie name to use
+                display_movie_name = movie
+                
+                # Try to extract the real movie name from the file path if not found above
+                if not 'real_movie_name' in locals():
+                    parts = os.path.basename(data_path).split('_unified_eye_metrics_')
+                    if len(parts) > 1 and '.' in parts[1]:
+                        real_movie_name = parts[1].split('.')[0]
+                        display_movie_name = real_movie_name
+                        print(f"Extracted movie name from path: {display_movie_name}")
+                else:
+                    display_movie_name = real_movie_name
+                    print(f"Using previously detected movie name: {display_movie_name}")
 
                 # Check if necessary columns are present
                 required_cols = ['timestamp', 'x_left', 'y_left', 'x_right', 'y_right']
@@ -925,10 +959,10 @@ class EyeMovementAnalysisGUI(QMainWindow):
                         from animated_scanpath import AnimatedScanpathWidget
                         
                         # Load the data - this will populate both the normal scanpath
-                        # view and any ROI data if available
-                        success = self.animated_viz_tab.load_data(data, movie, self.screen_width, self.screen_height)
+                        # view and any ROI data if available - use the actual movie name from the file
+                        success = self.animated_viz_tab.load_data(data, display_movie_name, self.screen_width, self.screen_height)
                         if success:
-                            print(f"Loaded {len(data)} samples for animated visualization")
+                            print(f"Loaded {len(data)} samples for animated visualization of {display_movie_name}")
             else:
                 print(f"No data file found for movie: {movie}")
                 print(f"Searched in directory: {data_dir}")
