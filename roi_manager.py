@@ -272,22 +272,18 @@ class ROIManager:
         """
         import matplotlib.patches as patches
 
-        print(f"Drawing ROIs for frame {frame_number}")
-
         # Get ROIs for this frame, using the nearest frame if necessary
         if frame_number in self.roi_data:
             rois = self.roi_data[frame_number]
-            print(f"Found {len(rois)} ROIs for frame {frame_number}")
         else:
             nearest_frame = self.get_nearest_frame(frame_number)
             if nearest_frame is None:
-                print(f"No data found for frame {frame_number} and no nearest frame available")
+                # No data found for this frame, silently return
                 return
             rois = self.roi_data[nearest_frame]
-            print(f"Using nearest frame {nearest_frame} with {len(rois)} ROIs")
 
         if not rois:
-            print(f"No ROIs found for frame {frame_number}")
+            # No ROIs found for this frame, silently return
             return
 
         # Default color map if none provided
@@ -306,7 +302,7 @@ class ROIManager:
         roi_count = 0
         for roi in rois:
             if "coordinates" not in roi or "label" not in roi:
-                print(f"Skipping ROI missing coordinates or label: {roi.keys()}")
+                # Silently skip ROIs missing required properties
                 continue
 
             # Get ROI properties
@@ -316,7 +312,7 @@ class ROIManager:
 
             # Skip if no coordinates
             if not coords:
-                print(f"Skipping ROI with empty coordinates: {label}")
+                # Silently skip ROIs with empty coordinates
                 continue
 
             # Get polygon points

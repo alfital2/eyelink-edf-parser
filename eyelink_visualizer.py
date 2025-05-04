@@ -7,6 +7,11 @@ Date: April 2025
 import os
 import pandas as pd
 import numpy as np
+# Configure matplotlib for thread safety
+import matplotlib
+# Only set the backend if it hasn't been set already (to avoid duplication with gui.py)
+if matplotlib.get_backend() != 'Agg':
+    matplotlib.use('Agg')  # Use non-interactive backend for thread safety
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, List, Tuple, Optional
@@ -41,7 +46,22 @@ class MovieEyeTrackingVisualizer:
         self.dpi = dpi
 
         # Default plot style settings
-        plt.style.use('seaborn-v0_8-whitegrid')
+        try:
+            # Try to use the new style name first
+            plt.style.use('seaborn-v0_12-whitegrid')
+        except Exception:
+            try:
+                # Try the old name with version prefix
+                plt.style.use('seaborn-v0_8-whitegrid')
+            except Exception:
+                try:
+                    # Try the original name without version prefix (for older matplotlib versions)
+                    plt.style.use('seaborn-whitegrid')
+                except Exception:
+                    # Fallback to a basic grid style that's available in all matplotlib versions
+                    plt.rcParams['axes.grid'] = True
+                    plt.rcParams['grid.linestyle'] = ':'
+                    plt.rcParams['axes.axisbelow'] = True
         self.default_figsize = (12, 8)
 
         # Color scheme

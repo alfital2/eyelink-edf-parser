@@ -1,5 +1,15 @@
 import sys
 import os
+
+# Add parent directory to path so we can import modules from the parent directory
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+    
+# Configure matplotlib for thread safety BEFORE importing any matplotlib-related modules
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend to avoid thread issues
+
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QFileDialog,
                              QComboBox, QCheckBox, QTabWidget, QSplitter,
@@ -119,6 +129,10 @@ class ProcessingThread(QThread):
         except Exception as e:
             import traceback
             self.error_occurred.emit(f"Error: {str(e)}\n{traceback.format_exc()}")
+        finally:
+            # Proper cleanup to prevent phantom threads
+            self.quit()
+            self.wait()
 
 
 class AnimatedROIScanpathTab(QWidget):
@@ -157,7 +171,7 @@ class AnimatedROIScanpathTab(QWidget):
             return self.scanpath_widget.load_data(data, self.roi_file_path, movie_name, screen_width, screen_height)
         else:
             # If no ROI file is explicitly selected, load eye data without ROI
-            self.scanpath_widget.status_label.setText("Please select a ROI file to visualize ROIs")
+            # Status label was removed to save space
             return self.scanpath_widget.load_data(data, None, movie_name, screen_width, screen_height)
 
 
@@ -301,20 +315,16 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         self.file_label = QLabel("No files selected")
         
-        # Create a combo box for file type selection
-        self.file_type_combo = QComboBox()
-        self.file_type_combo.addItems(["ASC Files", "CSV Files"])
-        self.file_type_combo.setToolTip(
-            "Select which file type to load:\n"
-            "• ASC Files: Raw EyeLink eye tracking data (slower to process but contains all original data)\n"
-            "• CSV Files: Preprocessed unified_eye_metrics files (faster loading of previously analyzed data)"
+        # Create a single button for loading source files (both ASC and CSV)
+        select_file_btn = QPushButton("Load Source File(s)")
+        select_file_btn.setToolTip(
+            "Load eye tracking data files:\n"
+            "• ASC Files: Raw EyeLink eye tracking data\n"
+            "• CSV Files: Preprocessed unified_eye_metrics files"
         )
-        self.file_type_combo.currentIndexChanged.connect(self.update_file_type_info)
-        
-        select_file_btn = QPushButton("Select File(s)")
         select_file_btn.clicked.connect(self.select_files)
+        select_file_btn.setMinimumWidth(150)
 
-        file_layout.addWidget(self.file_type_combo)
         file_layout.addWidget(select_file_btn)
         file_layout.addWidget(self.file_label, 1)
 
@@ -353,12 +363,13 @@ class EyeMovementAnalysisGUI(QMainWindow):
         file_format_help = QPushButton("?")
         file_format_help.setFixedSize(25, 25)
         file_format_help.setToolTip(
-            "File Format Information:\n\n"
+            "Supported File Formats:\n\n"
             "ASC Files: Raw EyeLink eye tracking data files.\n"
             "These are the original files from the eye tracker.\n\n"
             "CSV Files: Preprocessed unified eye metrics files.\n"
             "These are generated after processing ASC files and contain\n"
-            "already extracted eye tracking data in CSV format."
+            "already extracted eye tracking data in CSV format.\n\n"
+            "The program automatically detects the file type based on the extension."
         )
         file_format_help.clicked.connect(self.show_file_format_help)
         
@@ -656,26 +667,36 @@ class EyeMovementAnalysisGUI(QMainWindow):
                     table.setItem(row_position, 1, value_item)
 
     def select_files(self):
-        # Determine file filter based on selected type
-        if self.file_type_combo.currentText() == "ASC Files":
-            file_filter = "ASC Files (*.asc)"
-            dialog_title = "Select EyeLink ASC Files"
-        else:  # CSV Files
-            file_filter = "Unified Eye Metrics CSV Files (*unified_eye_metrics*.csv);;All CSV Files (*.csv)"
-            dialog_title = "Select Unified Eye Metrics CSV Files"
+        # Combined file filter for both ASC and CSV files
+        file_filter = "Eye Tracking Files (*.asc *.csv);;ASC Files (*.asc);;CSV Files (*.csv);;All Files (*.*)"
+        dialog_title = "Select Eye Tracking Data Files"
             
-        files, _ = QFileDialog.getOpenFileNames(
+        files, selected_filter = QFileDialog.getOpenFileNames(
             self, dialog_title, "", file_filter
         )
+        
         if files:
             self.file_paths = files
+            
+            # Update the file label
             if len(files) == 1:
                 self.file_label.setText(f"Selected: {os.path.basename(files[0])}")
             else:
                 self.file_label.setText(f"Selected {len(files)} files")
-                
-            # Store the selected file type for processing
-            self.selected_file_type = self.file_type_combo.currentText()
+            
+            # Automatically determine file type based on extension
+            is_csv = True
+            for file_path in files:
+                if file_path.lower().endswith('.asc'):
+                    is_csv = False
+                    break
+            
+            # Set the file type based on extension
+            self.selected_file_type = "CSV Files" if is_csv else "ASC Files"
+            file_type_display = "CSV" if is_csv else "ASC"
+            self.status_label.setText(f"Using {file_type_display} files. Click 'Process Data' to continue.")
+            
+            # Enable process button
             self.update_process_button()
 
     def select_output_dir(self):
@@ -849,6 +870,14 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
     def _load_animation_data_for_movie(self, movie):
         """Load data for the given movie into both animation tabs"""
+        # Prevent reentrant calls that could cause duplicate processes
+        if hasattr(self, '_loading_animation_data') and self._loading_animation_data:
+            print("Animation data loading already in progress, skipping duplicate call")
+            return
+            
+        # Set a flag to prevent reentrant calls
+        self._loading_animation_data = True
+        
         try:
             # Find the data directory for this movie
             data_dir = None
@@ -970,15 +999,19 @@ class EyeMovementAnalysisGUI(QMainWindow):
                     print(f"Files in directory: {os.listdir(data_dir)}")
                 
                 if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                    self.animated_viz_tab.scanpath_widget.status_label.setText(
-                        f"No data file found for movie: {movie}")
+                    # Status label was removed to save space, silently handle the error
+                    pass
 
         except Exception as e:
             print(f"Error loading data for animated scanpath: {e}")
             import traceback
             traceback.print_exc()  # Print detailed error for debugging
             if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                self.animated_viz_tab.scanpath_widget.status_label.setText(f"Error: {str(e)}")
+                # Status label was removed to save space, silently handle the error
+                pass
+        finally:
+            # Always clear the loading flag to prevent deadlocks
+            self._loading_animation_data = False
 
     def visualization_type_selected(self, index):
         """Show the selected visualization"""
@@ -1045,12 +1078,14 @@ class EyeMovementAnalysisGUI(QMainWindow):
     def show_file_format_help(self):
         """Show detailed help about file formats"""
         help_text = (
-            "<h3>File Format Information</h3>"
+            "<h3>Supported File Formats</h3>"
+            "<p>The application automatically detects the file type based on the file extension.</p>"
             "<p><b>ASC Files:</b> Raw EyeLink eye tracking data files</p>"
             "<ul>"
             "<li>These are the original files exported from the EyeLink eye tracker</li>"
             "<li>They contain raw gaze data, events (fixations, saccades, blinks), and messages</li>"
             "<li>Processing these files takes longer but provides access to all raw data</li>"
+            "<li>File extension: .asc</li>"
             "</ul>"
             "<p><b>CSV Files:</b> Preprocessed unified eye metrics files</p>"
             "<ul>"
@@ -1058,6 +1093,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
             "<li>They contain already extracted eye tracking data in a structured CSV format</li>"
             "<li>Loading these files is faster than processing raw ASC files</li>"
             "<li>Look for files containing 'unified_eye_metrics' in their name</li>"
+            "<li>File extension: .csv</li>"
             "</ul>"
             "<p>For most visualization purposes, either file format will work. Use CSV files for faster loading "
             "when you've already processed the data once.</p>"
@@ -1098,12 +1134,110 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.showMaximized()
 
 
+def parse_args():
+    """Parse command line arguments for the GUI."""
+    import argparse
+    parser = argparse.ArgumentParser(description='Eye Movement Analysis GUI')
+    parser.add_argument('--test_mode', action='store_true', 
+                      help='Run in test mode with predefined files')
+    parser.add_argument('--source_file', type=str, 
+                      help='Path to source file (.asc or .csv) for test mode')
+    parser.add_argument('--destination_folder', type=str, 
+                      help='Output folder for test mode')
+    
+    # For backward compatibility
+    parser.add_argument('--csv_file', type=str, 
+                      help='Path to CSV file for test mode (alternative to --source_file)')
+    parser.add_argument('--use_csv', action='store_true',
+                      help='[Deprecated] File type is now automatically detected')
+    
+    args = parser.parse_args()
+    
+    # If source_file is not set but csv_file is, use csv_file as source_file
+    if not args.source_file and args.csv_file:
+        args.source_file = args.csv_file
+        
+    return args
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = EyeMovementAnalysisGUI()
     
     window.screen_width = 1280
     window.screen_height = 1024
-
-    window.show()
+    
+    # Parse command line arguments
+    args = parse_args()
+    
+    # If in test mode, automatically set up the files
+    if args.test_mode:
+        print("Running in test mode")
+        
+        # Set file if provided - this needs to happen before we create and show the window
+        source_file_path = None
+        if args.source_file:
+            # Try to convert to absolute path if needed
+            file_path = os.path.abspath(args.source_file)
+            print(f"Checking file path: {file_path}")
+            
+            if os.path.exists(file_path):
+                source_file_path = file_path
+                window.file_paths = [file_path]
+                # Update the file label (this will be visible once the window is shown)
+                window.file_label.setText(f"Selected: {os.path.basename(file_path)}")
+                
+                # Automatically determine file type based on extension
+                is_csv = file_path.lower().endswith('.csv')
+                window.selected_file_type = "CSV Files" if is_csv else "ASC Files"
+                file_type = "CSV" if is_csv else "ASC"
+                print(f"Detected file type: {file_type}")
+                
+                # Update status label
+                window.status_label.setText(f"Using {file_type} file: {os.path.basename(file_path)}")
+                
+                # Process events to try to update UI
+                app.processEvents()
+                print(f"Using file: {file_path}")
+            else:
+                print(f"WARNING: File not found at path: {file_path}")
+        
+        # Set output directory if provided
+        dest_path = None
+        if args.destination_folder:
+            # Try to convert to absolute path if needed
+            dest_path = os.path.abspath(args.destination_folder)
+            
+            if not os.path.exists(dest_path):
+                os.makedirs(dest_path, exist_ok=True)
+                
+            window.output_dir = dest_path
+            window.output_label.setText(f"Output: {dest_path}")
+            # Force update the UI to ensure the label is refreshed
+            app.processEvents()
+            print(f"Using output directory: {dest_path}")
+        
+        # Update process button state if both file and directory are specified
+        if source_file_path and dest_path:
+            window.update_process_button()
+            # Force update the UI to ensure the button is enabled
+            app.processEvents()
+            
+            # If both file and output directory are specified, automatically process
+            print("Auto-processing the specified file...")
+            
+            # Use a QTimer for delayed processing but also try immediate processing as backup
+            from PyQt5.QtCore import QTimer
+            
+            # Show the window first to make sure all UI elements are visible
+            window.show()
+            app.processEvents()  # Process events to render the window
+            
+            # Use QTimer to process data after the UI has settled 
+            # This avoids duplicate processing and ensures the UI is ready
+            QTimer.singleShot(200, window.process_data)
+    else:
+        # Only show the window here if not in test mode
+        window.show()
+        
     sys.exit(app.exec_())
