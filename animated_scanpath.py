@@ -5,6 +5,9 @@ Date: April 2025
 
 This module adds animation capabilities to the eye movement scan path visualization,
 allowing users to see the temporal progression of eye movements during movie viewing.
+
+The animation can load data from either original ASC files or pre-processed CSV files,
+providing flexibility and improved performance when working with previously analyzed data.
 """
 
 import numpy as np

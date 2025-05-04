@@ -2,6 +2,13 @@
 Animated ROI Scanpath Visualization
 Author: Tal Alfi
 Date: April 2025
+
+This module extends the animated scanpath visualization with Region of Interest (ROI) 
+capabilities, allowing users to visualize eye movements in relation to defined regions
+in the stimulus.
+
+The visualization can load data from either original ASC files or pre-processed CSV files,
+providing flexibility and improved performance when working with previously analyzed data.
 """
 
 import os
