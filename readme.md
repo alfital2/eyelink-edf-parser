@@ -66,8 +66,9 @@ The GUI provides intuitive access to:
 ### Command Line Options
 
 ```
---input, -i         Path to ASC file or directory containing ASC files
+--input, -i         Path to ASC/CSV file or directory containing ASC/CSV files
 --output, -o        Output directory for parsed data and visualizations (default: 'output')
+--use_csv           Process CSV files instead of ASC files (faster loading of pre-processed data)
 --visualize         Generate visualizations for each movie
 --report            Generate comprehensive HTML visualization report
 --screen_width      Screen width in pixels (default: 1280)
@@ -208,6 +209,20 @@ python main.py --input path/to/directory/ --output results --no_visualize
 
 ```bash
 python main.py --input path/to/directory/ --output results --visualize --report
+```
+
+### Load Pre-processed CSV Files (Faster)
+
+First, process your ASC files with the unified_only option to generate CSV files:
+
+```bash
+python main.py --input path/to/directory/ --output results --unified_only
+```
+
+Later, you can load these CSV files directly (much faster than re-processing ASC files):
+
+```bash
+python main.py --input path/to/results/data/ --output new_results --use_csv --visualize
 ```
 
 ### Using the Animated Scanpath Feature

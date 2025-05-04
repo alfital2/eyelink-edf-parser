@@ -13,7 +13,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 # Import our modules
-from parser import process_asc_file, process_multiple_files
+from parser import process_asc_file, process_multiple_files, load_csv_file, load_multiple_csv_files
 from eyelink_visualizer import MovieEyeTrackingVisualizer
 
 
@@ -22,13 +22,16 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Eye Movement Analysis for Autism Classification')
 
     # Input arguments
-    parser.add_argument('--input', '-i', type=str, help='Path to ASC file or directory containing ASC files')
+    parser.add_argument('--input', '-i', type=str, 
+                        help='Path to ASC/CSV file or directory containing ASC/CSV files')
     parser.add_argument('--output', '-o', type=str, default='output',
                         help='Output directory for parsed data and visualizations')
     parser.add_argument('--screen_width', type=int, default=1280, help='Screen width in pixels')
     parser.add_argument('--screen_height', type=int, default=1024, help='Screen height in pixels')
 
     # Processing options
+    parser.add_argument('--use_csv', action='store_true', 
+                        help='Process CSV files instead of ASC files. Useful for faster loading of pre-processed data.')
     parser.add_argument('--unified_only', action='store_true', help='Only save unified eye metrics CSV')
     parser.add_argument('--visualize', action='store_true', help='Generate visualizations')
     parser.add_argument('--no_features', action='store_false', dest='extract_features', help='Skip feature extraction')
@@ -37,14 +40,27 @@ def parse_args():
     return parser.parse_args()
 
 
-def find_asc_files(input_path: str) -> List[str]:
-    """Find all ASC files in the given directory or return a single file."""
+def find_input_files(input_path: str, use_csv: bool = False) -> List[str]:
+    """
+    Find all input files (ASC or CSV) in the given directory or return a single file.
+    
+    Args:
+        input_path: Path to a file or directory
+        use_csv: If True, look for CSV files instead of ASC files
+    
+    Returns:
+        List of file paths
+    """
+    file_ext = '*.csv' if use_csv else '*.asc'
+    expected_ext = '.csv' if use_csv else '.asc'
+    file_type = 'CSV' if use_csv else 'ASC'
+    
     if os.path.isdir(input_path):
-        return sorted(glob.glob(os.path.join(input_path, '*.asc')))
-    elif os.path.isfile(input_path) and input_path.lower().endswith('.asc'):
+        return sorted(glob.glob(os.path.join(input_path, file_ext)))
+    elif os.path.isfile(input_path) and input_path.lower().endswith(expected_ext):
         return [input_path]
     else:
-        raise ValueError(f"Input path is not a valid ASC file or directory: {input_path}")
+        raise ValueError(f"Input path is not a valid {file_type} file or directory: {input_path}")
 
 
 def create_output_dirs(base_output_dir: str) -> Tuple[str, str, str]:
@@ -67,17 +83,20 @@ def main():
     """Main execution function."""
     start_time = time.time()
     args = parse_args()
+    
+    # Determine file type to process
+    file_type = "CSV" if args.use_csv else "ASC"
 
     # Find input files
     try:
-        asc_files = find_asc_files(args.input)
-        print(f"Found {len(asc_files)} ASC files.")
+        input_files = find_input_files(args.input, args.use_csv)
+        print(f"Found {len(input_files)} {file_type} files.")
     except ValueError as e:
         print(f"Error: {e}")
         return 1
 
-    if not asc_files:
-        print("No ASC files found. Exiting.")
+    if not input_files:
+        print(f"No {file_type} files found. Exiting.")
         return 1
 
     # Create output directories
@@ -88,13 +107,21 @@ def main():
     print(f"  - Features: {feature_dir}")
 
     # Process multiple files if needed
-    if len(asc_files) > 1:
-        print(f"\nProcessing {len(asc_files)} files...")
-        combined_features = process_multiple_files(
-            asc_files,
-            output_dir=data_dir,
-            unified_only=args.unified_only
-        )
+    if len(input_files) > 1:
+        print(f"\nProcessing {len(input_files)} {file_type} files...")
+        
+        # Choose the appropriate processing function based on file type
+        if args.use_csv:
+            combined_features = load_multiple_csv_files(
+                input_files,
+                output_dir=data_dir
+            )
+        else:
+            combined_features = process_multiple_files(
+                input_files,
+                output_dir=data_dir,
+                unified_only=args.unified_only
+            )
 
         # Save combined features
         if args.extract_features and not combined_features.empty:
@@ -121,20 +148,29 @@ def main():
             plt.close()
     else:
         # Process a single file
-        print(f"\nProcessing file: {asc_files[0]}")
-        result = process_asc_file(
-            asc_files[0],
-            output_dir=data_dir,
-            extract_features=args.extract_features,
-            unified_only=args.unified_only
-        )
+        print(f"\nProcessing file: {input_files[0]}")
+        
+        # Choose the appropriate processing function based on file type
+        if args.use_csv:
+            result = load_csv_file(
+                input_files[0],
+                output_dir=data_dir,
+                extract_features=args.extract_features
+            )
+        else:
+            result = process_asc_file(
+                input_files[0],
+                output_dir=data_dir,
+                extract_features=args.extract_features,
+                unified_only=args.unified_only
+            )
 
         print(f"Processing complete. Summary: {result['summary']}")
 
         # Save individual features
         if args.extract_features and 'features' in result and not result['features'].empty:
             # Get the base filename
-            base_name = os.path.splitext(os.path.basename(asc_files[0]))[0]
+            base_name = os.path.splitext(os.path.basename(input_files[0]))[0]
             features_path = os.path.join(feature_dir, f"{base_name}_features.csv")
 
             # Save features to CSV
@@ -146,7 +182,11 @@ def main():
         print("\nGenerating visualizations...")
         try:
             # Get the base filename for participant ID
-            participant_id = os.path.splitext(os.path.basename(asc_files[0]))[0]
+            participant_id = os.path.splitext(os.path.basename(input_files[0]))[0]
+            
+            # If it's a CSV file with unified_eye_metrics in the name, remove that part
+            if args.use_csv:
+                participant_id = participant_id.replace('_unified_eye_metrics', '')
 
             # Initialize the movie visualizer
             visualizer = MovieEyeTrackingVisualizer(
