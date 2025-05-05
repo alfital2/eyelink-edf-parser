@@ -883,18 +883,36 @@ class EyeLinkASCParser:
                                            (samples_df['timestamp'] <= end_time)]
                     
                     # Filter fixations, saccades, and blinks by time range
-                    fix_left_filtered = [f for f in self.fixations['left'] 
-                                        if f['start_time'] >= start_time and f['end_time'] <= end_time]
-                    fix_right_filtered = [f for f in self.fixations['right'] 
-                                         if f['start_time'] >= start_time and f['end_time'] <= end_time]
-                    sacc_left_filtered = [s for s in self.saccades['left'] 
-                                         if s['start_time'] >= start_time and s['end_time'] <= end_time]
-                    sacc_right_filtered = [s for s in self.saccades['right'] 
-                                          if s['start_time'] >= start_time and s['end_time'] <= end_time]
-                    blink_left_filtered = [b for b in self.blinks['left'] 
-                                          if b['start_time'] >= start_time and b['end_time'] <= end_time]
-                    blink_right_filtered = [b for b in self.blinks['right'] 
-                                           if b['start_time'] >= start_time and b['end_time'] <= end_time]
+                    # Only include events with valid start_time and end_time
+                    fix_left_filtered = []
+                    for f in self.fixations['left']:
+                        if f['start_time'] >= start_time and f['end_time'] is not None and f['end_time'] <= end_time:
+                            fix_left_filtered.append(f)
+                    
+                    fix_right_filtered = []
+                    for f in self.fixations['right']:
+                        if f['start_time'] >= start_time and f['end_time'] is not None and f['end_time'] <= end_time:
+                            fix_right_filtered.append(f)
+                    
+                    sacc_left_filtered = []
+                    for s in self.saccades['left']:
+                        if s['start_time'] >= start_time and s['end_time'] is not None and s['end_time'] <= end_time:
+                            sacc_left_filtered.append(s)
+                    
+                    sacc_right_filtered = []
+                    for s in self.saccades['right']:
+                        if s['start_time'] >= start_time and s['end_time'] is not None and s['end_time'] <= end_time:
+                            sacc_right_filtered.append(s)
+                    
+                    blink_left_filtered = []
+                    for b in self.blinks['left']:
+                        if b['start_time'] >= start_time and b['end_time'] is not None and b['end_time'] <= end_time:
+                            blink_left_filtered.append(b)
+                    
+                    blink_right_filtered = []
+                    for b in self.blinks['right']:
+                        if b['start_time'] >= start_time and b['end_time'] is not None and b['end_time'] <= end_time:
+                            blink_right_filtered.append(b)
                 else:
                     # If movie not found, use empty dataframes
                     print(f"Warning: Movie {movie_name} not found in data. No features will be extracted.")
@@ -1062,8 +1080,17 @@ class EyeLinkASCParser:
         # Extract features for each movie segment if available
         if hasattr(self, 'movie_segments') and self.movie_segments:
             for segment in self.movie_segments:
-                movie_name = segment['movie_name']
-                all_features[movie_name] = self.extract_features(movie_name)
+                try:
+                    movie_name = segment['movie_name']
+                    all_features[movie_name] = self.extract_features(movie_name)
+                except Exception as e:
+                    print(f"Warning: Failed to extract features for movie {segment.get('movie_name', 'unknown')}: {str(e)}")
+                    # Create a minimal feature DataFrame with just the participant ID and movie name
+                    features = {
+                        'participant_id': os.path.splitext(os.path.basename(self.file_path))[0],
+                        'movie_name': segment.get('movie_name', 'unknown')
+                    }
+                    all_features[segment.get('movie_name', 'unknown')] = pd.DataFrame([features])
                 
         return all_features
 
@@ -1082,76 +1109,92 @@ def process_asc_file(file_path: str, output_dir: str = None, extract_features: b
     Returns:
         Dictionary with parsing results
     """
-    parser = EyeLinkASCParser(file_path)
-    summary = parser.parse_file()
+    try:
+        parser = EyeLinkASCParser(file_path)
+        summary = parser.parse_file()
 
-    # Get all dataframes
-    dataframes = parser.to_dataframes()
+        # Get all dataframes
+        dataframes = parser.to_dataframes()
 
-    results = {
-        'summary': summary,
-        'dataframes': dataframes
-    }
+        results = {
+            'summary': summary,
+            'dataframes': dataframes
+        }
 
-    if output_dir:
-        if unified_only:
-            # Only save the unified metrics file
-            if 'unified_eye_metrics' in dataframes:
-                base_name = os.path.splitext(os.path.basename(file_path))[0]
-                output_path = os.path.join(output_dir, f"{base_name}_unified_eye_metrics.csv")
-
-                if not os.path.exists(output_dir):
-                    os.makedirs(output_dir)
-
-                dataframes['unified_eye_metrics'].to_csv(output_path, index=False)
-                print(f"Saved unified eye metrics to {output_path}")
-                results['saved_files'] = [output_path]
-        else:
-            # Save all dataframes
-            results['saved_files'] = parser.save_to_csv(output_dir)
-
-    if extract_features:
-        # Extract features for all data and per movie
-        all_features = parser.extract_features_per_movie()
-        
-        # Add combined features to results
-        results['features'] = all_features["All Data"]
-        
-        # Add per-movie features to results
-        results['movie_features'] = all_features
-        
         if output_dir:
-            features_dir = os.path.join(output_dir, 'features')
-            os.makedirs(features_dir, exist_ok=True)
-            
-            # Save combined features
-            base_name = os.path.splitext(os.path.basename(file_path))[0]
-            features_path = os.path.join(features_dir, f"{base_name}_features.csv")
-            all_features["All Data"].to_csv(features_path, index=False)
-            print(f"Saved combined features to {features_path}")
-            results['features_path'] = features_path
-            
-            # Save per-movie features
-            movie_features_paths = {}
-            for movie_name, features_df in all_features.items():
-                if movie_name == "All Data":
-                    continue
-                
-                # Clean movie name for filename
-                clean_movie_name = re.sub(r'[^\w\d-]', '_', 
-                                         os.path.splitext(movie_name)[0] if '.' in movie_name else movie_name)
-                
-                movie_features_path = os.path.join(features_dir, f"{base_name}_features_{clean_movie_name}.csv")
-                features_df.to_csv(movie_features_path, index=False)
-                print(f"Saved features for movie '{movie_name}' to {movie_features_path}")
-                movie_features_paths[movie_name] = movie_features_path
-            
-            results['movie_features_paths'] = movie_features_paths
+            if unified_only:
+                # Only save the unified metrics file
+                if 'unified_eye_metrics' in dataframes:
+                    base_name = os.path.splitext(os.path.basename(file_path))[0]
+                    output_path = os.path.join(output_dir, f"{base_name}_unified_eye_metrics.csv")
 
-        print("\nExtracted features:")
-        print(results['features'])
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
 
-    return results
+                    dataframes['unified_eye_metrics'].to_csv(output_path, index=False)
+                    print(f"Saved unified eye metrics to {output_path}")
+                    results['saved_files'] = [output_path]
+            else:
+                # Save all dataframes
+                results['saved_files'] = parser.save_to_csv(output_dir)
+
+        if extract_features:
+            try:
+                # Extract features for all data and per movie
+                all_features = parser.extract_features_per_movie()
+            
+                # Add combined features to results
+                results['features'] = all_features["All Data"]
+                
+                # Add per-movie features to results
+                results['movie_features'] = all_features
+            except Exception as e:
+                print(f"Warning: Error extracting features: {str(e)}")
+                # Create minimal features
+                features = {
+                    'participant_id': os.path.splitext(os.path.basename(file_path))[0]
+                }
+                results['features'] = pd.DataFrame([features])
+                results['movie_features'] = {"All Data": results['features']}
+                
+                if output_dir:
+                    features_dir = os.path.join(output_dir, 'features')
+                    os.makedirs(features_dir, exist_ok=True)
+                    
+                    # Save combined features
+                    base_name = os.path.splitext(os.path.basename(file_path))[0]
+                    features_path = os.path.join(features_dir, f"{base_name}_features.csv")
+                    all_features["All Data"].to_csv(features_path, index=False)
+                    print(f"Saved combined features to {features_path}")
+                    results['features_path'] = features_path
+                    
+                    # Save per-movie features
+                    movie_features_paths = {}
+                    for movie_name, features_df in all_features.items():
+                        if movie_name == "All Data":
+                            continue
+                        
+                        # Clean movie name for filename
+                        clean_movie_name = re.sub(r'[^\w\d-]', '_', 
+                                                os.path.splitext(movie_name)[0] if '.' in movie_name else movie_name)
+                        
+                        movie_features_path = os.path.join(features_dir, f"{base_name}_features_{clean_movie_name}.csv")
+                        features_df.to_csv(movie_features_path, index=False)
+                        print(f"Saved features for movie '{movie_name}' to {movie_features_path}")
+                        movie_features_paths[movie_name] = movie_features_path
+                    
+                    results['movie_features_paths'] = movie_features_paths
+
+                print("\nExtracted features:")
+                print(results['features'])
+
+        return results
+    except Exception as e:
+        print(f"Error processing file {file_path}: {str(e)}")
+        return {
+            'summary': {'error': str(e)},
+            'dataframes': {}
+        }
 
 
 def process_multiple_files(file_paths: List[str], output_dir: str = None,
