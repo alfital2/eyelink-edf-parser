@@ -31,6 +31,7 @@ from animated_roi_scanpath import AnimatedROIScanpathWidget
 class ProcessingThread(QThread):
     """Thread for running processing operations without freezing the GUI"""
     update_progress = pyqtSignal(int)
+    status_update = pyqtSignal(str)  # New signal for status updates
     processing_complete = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
 
@@ -46,6 +47,7 @@ class ProcessingThread(QThread):
     def run(self):
         try:
             # Create timestamped directory
+            self.status_update.emit("Creating output directories...")
             timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             self.timestamped_dir = os.path.join(self.output_dir, timestamp)
             self.data_dir = os.path.join(self.timestamped_dir, 'data')
@@ -57,44 +59,94 @@ class ProcessingThread(QThread):
             os.makedirs(self.feature_dir, exist_ok=True)
 
             # Process the files using the appropriate functions based on file type
+            self.update_progress.emit(5)
+            
+            file_type_display = "ASC" if self.file_type == "ASC Files" else "CSV"
+            num_files = len(self.file_paths)
+            file_paths_display = self.file_paths[0] if num_files == 1 else f"{num_files} files"
+            
+            self.status_update.emit(f"Reading {file_type_display} file{'s' if num_files > 1 else ''}: {os.path.basename(file_paths_display) if num_files == 1 else ''}")
             self.update_progress.emit(10)
 
             if self.file_type == "ASC Files":
                 # Process ASC files
-                if len(self.file_paths) == 1:
+                if num_files == 1:
+                    self.status_update.emit(f"Parsing eye tracking data from {os.path.basename(self.file_paths[0])}...")
+                    self.update_progress.emit(15)
+                    
+                    self.status_update.emit("Extracting sample data and events...")
+                    self.update_progress.emit(20)
+                    
+                    self.status_update.emit("Processing fixations, saccades, and blinks...")
+                    self.update_progress.emit(30)
+                    
+                    if self.extract_features:
+                        self.status_update.emit("Calculating eye movement metrics...")
+                        self.update_progress.emit(40)
+                    
                     result = process_asc_file(
                         self.file_paths[0],
                         output_dir=self.data_dir,
                         extract_features=self.extract_features
                     )
+                    self.status_update.emit("Eye tracking data processing complete.")
                     self.update_progress.emit(50)
                 else:
+                    self.status_update.emit(f"Processing {num_files} ASC files...")
+                    self.update_progress.emit(20)
+                    
+                    for i, file_path in enumerate(self.file_paths):
+                        progress = 20 + int((i / num_files) * 30)  # Progress from 20% to 50%
+                        self.status_update.emit(f"Processing file {i+1}/{num_files}: {os.path.basename(file_path)}")
+                        self.update_progress.emit(progress)
+                    
                     combined_features = process_multiple_files(
                         self.file_paths,
                         output_dir=self.data_dir
                     )
                     result = {"features": combined_features}
+                    self.status_update.emit("All files processed successfully.")
                     self.update_progress.emit(50)
             else:
                 # Process CSV files
-                if len(self.file_paths) == 1:
+                if num_files == 1:
+                    self.status_update.emit(f"Loading data from CSV file: {os.path.basename(self.file_paths[0])}...")
+                    self.update_progress.emit(30)
+                    
+                    if self.extract_features:
+                        self.status_update.emit("Calculating eye movement metrics from CSV data...")
+                        self.update_progress.emit(40)
+                    
                     result = load_csv_file(
                         self.file_paths[0],
                         output_dir=self.data_dir,
                         extract_features=self.extract_features
                     )
+                    self.status_update.emit("CSV data processing complete.")
                     self.update_progress.emit(50)
                 else:
+                    self.status_update.emit(f"Processing {num_files} CSV files...")
+                    self.update_progress.emit(20)
+                    
+                    for i, file_path in enumerate(self.file_paths):
+                        progress = 20 + int((i / num_files) * 30)  # Progress from 20% to 50%
+                        self.status_update.emit(f"Processing file {i+1}/{num_files}: {os.path.basename(file_path)}")
+                        self.update_progress.emit(progress)
+                    
                     combined_features = load_multiple_csv_files(
                         self.file_paths,
                         output_dir=self.data_dir
                     )
                     result = {"features": combined_features}
+                    self.status_update.emit("All CSV files processed successfully.")
                     self.update_progress.emit(50)
 
             # Generate visualizations if requested
             vis_results = {}
             if self.visualize:
+                self.status_update.emit("Initializing visualization engine...")
+                self.update_progress.emit(55)
+                
                 visualizer = MovieEyeTrackingVisualizer(
                     base_dir=self.data_dir,
                     screen_size=(1280, 1024)
@@ -108,27 +160,56 @@ class ProcessingThread(QThread):
                     if self.file_type == "CSV Files" and participant_id.endswith('_unified_eye_metrics'):
                         participant_id = participant_id.replace('_unified_eye_metrics', '')
 
+                self.status_update.emit("Generating visualizations for eye tracking data...")
                 self.update_progress.emit(60)
+                
+                # Start processing visualizations
                 vis_results = visualizer.process_all_movies(participant_id)
+                
+                # Count how many visualizations were created
+                total_visualizations = sum(len(plots) for plots in vis_results.values())
+                self.status_update.emit(f"Created {total_visualizations} visualizations across {len(vis_results)} movies.")
+                self.update_progress.emit(80)
 
                 # Generate HTML report if requested
                 if self.generate_report and vis_results:
+                    self.status_update.emit("Generating HTML report of all visualizations...")
+                    self.update_progress.emit(85)
+                    
                     report_dir = os.path.join(self.viz_dir, 'report')
                     report_path = visualizer.generate_report(vis_results, report_dir)
                     result['report_path'] = report_path
+                    self.status_update.emit("HTML report generated successfully.")
 
                 self.update_progress.emit(90)
 
             # Return the complete results
+            self.status_update.emit("Finalizing results...")
             result['visualizations'] = vis_results
             result['output_dir'] = self.timestamped_dir
+            
+            # Add summary information
+            if 'summary' not in result and 'parser' in result:
+                # Extract some basic counts
+                parser = result['parser']
+                summary = {
+                    'samples': len(parser.sample_data) if hasattr(parser, 'sample_data') else 0,
+                    'fixations': sum(len(fixs) for fixs in parser.fixations.values()) if hasattr(parser, 'fixations') else 0,
+                    'saccades': sum(len(saccs) for saccs in parser.saccades.values()) if hasattr(parser, 'saccades') else 0,
+                    'blinks': sum(len(blinks) for blinks in parser.blinks.values()) if hasattr(parser, 'blinks') else 0,
+                    'frames': len(parser.frame_markers) if hasattr(parser, 'frame_markers') else 0
+                }
+                result['summary'] = summary
+            
             self.processing_complete.emit(result)
-
+            self.status_update.emit("Processing complete!")
             self.update_progress.emit(100)
 
         except Exception as e:
             import traceback
-            self.error_occurred.emit(f"Error: {str(e)}\n{traceback.format_exc()}")
+            error_msg = f"Error: {str(e)}"
+            self.status_update.emit(error_msg)
+            self.error_occurred.emit(f"{error_msg}\n{traceback.format_exc()}")
         finally:
             # Proper cleanup to prevent phantom threads
             self.quit()
@@ -446,9 +527,22 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         processing_layout.addWidget(process_section)
 
-        # Status section
+        # Status section with detailed information
+        status_section = QWidget()
+        status_layout = QVBoxLayout(status_section)
+        
+        # Current status label
         self.status_label = QLabel("Ready")
-        processing_layout.addWidget(self.status_label)
+        self.status_label.setStyleSheet("font-weight: bold;")
+        status_layout.addWidget(self.status_label)
+        
+        # Processing log (shows history of status updates)
+        self.status_log = QTextBrowser()
+        self.status_log.setMaximumHeight(150)
+        self.status_log.setPlaceholderText("Processing log will appear here...")
+        status_layout.addWidget(self.status_log)
+        
+        processing_layout.addWidget(status_section)
 
         processing_layout.addStretch()
 
@@ -1008,6 +1102,9 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.process_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.status_label.setText("Processing...")
+        
+        # Clear the status log before starting new processing
+        self.status_log.clear()
 
         # Start processing thread with the selected file type
         self.processing_thread = ProcessingThread(
@@ -1021,6 +1118,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         # Connect signals
         self.processing_thread.update_progress.connect(self.update_progress)
+        self.processing_thread.status_update.connect(self.update_status)
         self.processing_thread.processing_complete.connect(self.processing_finished)
         self.processing_thread.error_occurred.connect(self.processing_error)
 
@@ -1029,6 +1127,21 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)
+        
+    def update_status(self, message):
+        """Update the status label with detailed processing information"""
+        # Update current status label
+        self.status_label.setText(message)
+        
+        # Add message to the processing log with timestamp
+        timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+        formatted_message = f"[{timestamp}] {message}"
+        
+        # Add new message to the log
+        self.status_log.append(formatted_message)
+        
+        # Scroll to bottom to show the latest message
+        self.status_log.verticalScrollBar().setValue(self.status_log.verticalScrollBar().maximum())
 
     def processing_finished(self, results):
         self.progress_bar.setValue(100)
@@ -1040,12 +1153,37 @@ class EyeMovementAnalysisGUI(QMainWindow):
         # Show results summary
         if "summary" in results:
             summary = results["summary"]
+            
+            # Format summary message
             msg = (f"Processed data:\n"
                    f"- {summary['samples']} samples\n"
                    f"- {summary['fixations']} fixations\n"
                    f"- {summary['saccades']} saccades\n"
                    f"- {summary['blinks']} blinks\n"
                    f"- {summary['frames']} frames")
+            
+            # Add summary to the status log with highlighting
+            self.status_log.setTextColor(Qt.blue if not self.is_dark_mode else Qt.cyan)
+            self.status_log.append("\n--- PROCESSING SUMMARY ---")
+            self.status_log.append(f"• Processed {summary['samples']} eye tracking samples")
+            self.status_log.append(f"• Detected {summary['fixations']} fixations")
+            self.status_log.append(f"• Detected {summary['saccades']} saccades")
+            self.status_log.append(f"• Detected {summary['blinks']} blinks")
+            self.status_log.append(f"• Processed {summary['frames']} video frames")
+            
+            # If there are visualizations, add count
+            if "visualizations" in results and results["visualizations"]:
+                viz_count = sum(len(viz) for viz in results["visualizations"].values())
+                self.status_log.append(f"• Generated {viz_count} visualizations")
+                
+            # Add output directory
+            if "output_dir" in results:
+                self.status_log.append(f"• Output saved to: {results['output_dir']}")
+            
+            self.status_log.append("--- END OF SUMMARY ---")
+            self.status_log.setTextColor(Qt.black if not self.is_dark_mode else Qt.white)
+                
+            # Show summary in message box
             QMessageBox.information(self, "Processing Complete", msg)
 
         # Update the features display if features were extracted
@@ -1134,6 +1272,24 @@ class EyeMovementAnalysisGUI(QMainWindow):
     def processing_error(self, error_msg):
         self.status_label.setText("Error occurred during processing")
         self.process_btn.setEnabled(True)
+        
+        # Log the error with a different format to make it stand out
+        timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+        
+        # Add a short version to the log
+        short_error = error_msg.split('\n')[0]  # Just the first line
+        formatted_error = f"[{timestamp}] ❌ ERROR: {short_error}"
+        self.status_log.append(formatted_error)
+        
+        # Make the error message red to stand out
+        self.status_log.setTextColor(Qt.red)
+        self.status_log.append("See details in the error message box")
+        self.status_log.setTextColor(Qt.black if not self.is_dark_mode else Qt.white)
+        
+        # Scroll to bottom
+        self.status_log.verticalScrollBar().setValue(self.status_log.verticalScrollBar().maximum())
+        
+        # Show error in message box
         QMessageBox.critical(self, "Processing Error", error_msg)
 
     def movie_selected(self, index):
