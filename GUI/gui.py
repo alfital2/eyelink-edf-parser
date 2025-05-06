@@ -1902,12 +1902,50 @@ class EyeMovementAnalysisGUI(QMainWindow):
             # Close progress dialog
             progress_dialog.close()
             
-            # Show success message
-            QMessageBox.information(
-                self,
-                "Plot Generated",
-                f"Social attention plot for {movie} has been generated and added to the visualization dropdown."
-            )
+            # Regenerate HTML report with the new plot if a report exists
+            if hasattr(self, 'report_path') and self.report_path and os.path.exists(os.path.dirname(self.report_path)):
+                try:
+                    # Get visualizer instance
+                    from eyelink_visualizer import MovieEyeTrackingVisualizer
+                    
+                    # Determine the base directory for the visualizer - use the parent of the plots directory
+                    # or alternatively the directory containing the movie data file
+                    if movie_data and "data_path" in movie_data:
+                        base_dir = os.path.dirname(os.path.dirname(movie_data["data_path"]))
+                    else:
+                        # Fallback to current output directory
+                        base_dir = self.output_dir
+                        
+                    print(f"DEBUG: Using base directory for report regeneration: {base_dir}")
+                    visualizer = MovieEyeTrackingVisualizer(base_dir=base_dir, screen_size=(self.screen_width, self.screen_height))
+                    
+                    # Generate a new report
+                    report_dir = os.path.dirname(self.report_path)
+                    visualizer.generate_report(self.visualization_results, report_dir)
+                    print(f"Regenerated HTML report to include new social attention plot")
+                    
+                    # Show success message with report information
+                    QMessageBox.information(
+                        self,
+                        "Plot Generated",
+                        f"Social attention plot for {movie} has been generated and added to the visualization dropdown.\n\n"
+                        f"The HTML report has been updated to include the new plot."
+                    )
+                except Exception as e:
+                    # Show success message without report information
+                    QMessageBox.information(
+                        self,
+                        "Plot Generated",
+                        f"Social attention plot for {movie} has been generated and added to the visualization dropdown.\n\n"
+                        f"Note: Could not update HTML report: {str(e)}"
+                    )
+            else:
+                # Show regular success message
+                QMessageBox.information(
+                    self,
+                    "Plot Generated",
+                    f"Social attention plot for {movie} has been generated and added to the visualization dropdown."
+                )
             
         except Exception as e:
             progress_dialog.close()
