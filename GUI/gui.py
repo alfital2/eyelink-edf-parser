@@ -555,6 +555,27 @@ class EyeMovementAnalysisGUI(QMainWindow):
         # Add spacer at the end
         movie_layout.addStretch(1)
         viz_layout.addWidget(movie_section)
+        
+        # ROI Controls Section
+        roi_section = QWidget()
+        roi_layout = QHBoxLayout(roi_section)
+        
+        # Load ROI button
+        self.load_roi_btn = QPushButton("Load ROI")
+        self.load_roi_btn.clicked.connect(self.select_roi_file)
+        roi_layout.addWidget(self.load_roi_btn)
+        
+        # ROI file label
+        self.roi_label = QLabel("No ROI file selected")
+        roi_layout.addWidget(self.roi_label, 1)
+        
+        # Generate Social Attention Plots button (initially disabled)
+        self.generate_social_btn = QPushButton("Generate Social Attention Plots")
+        self.generate_social_btn.setEnabled(False)
+        self.generate_social_btn.clicked.connect(self.generate_social_attention_plots)
+        roi_layout.addWidget(self.generate_social_btn)
+        
+        viz_layout.addWidget(roi_section)
 
         # Create a stacked widget to switch between static image and animated visualization
         self.viz_stack = QStackedWidget()
@@ -1550,6 +1571,392 @@ class EyeMovementAnalysisGUI(QMainWindow):
         if hasattr(self, 'image_label') and self.image_label.pixmap() is not None:
             # Re-scale the current image if there is one
             self.show_visualization()
+            
+    def select_roi_file(self):
+        """Open file dialog to select ROI JSON file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select ROI File", "", "JSON Files (*.json)"
+        )
+        
+        if file_path and os.path.exists(file_path):
+            # Store the path and update the UI
+            self.roi_file_path = file_path
+            self.roi_label.setText(f"ROI File: {os.path.basename(file_path)}")
+            
+            # Enable the generate social attention plots button
+            self.generate_social_btn.setEnabled(True)
+    
+    def generate_social_attention_plots(self):
+        """Generate social attention plots based on loaded ROI file"""
+        if not self.roi_file_path:
+            QMessageBox.warning(
+                self, 
+                "ROI File Required", 
+                "Please load an ROI file first."
+            )
+            return
+            
+        # Get the currently selected movie
+        if self.movie_combo.count() == 0 or self.movie_combo.currentIndex() < 0:
+            QMessageBox.warning(
+                self,
+                "No Movie Selected",
+                "Please select a movie for analysis."
+            )
+            return
+            
+        movie = self.movie_combo.currentText()
+        
+        # Get the movie data
+        movie_data = self._get_movie_data(movie)
+        if movie_data is None or movie_data.get("data") is None:
+            QMessageBox.warning(
+                self,
+                "No Data Available",
+                f"Could not find eye tracking data for {movie}."
+            )
+            return
+            
+        # Load the ROI file
+        import json
+        try:
+            with open(self.roi_file_path, 'r') as f:
+                raw_roi_data = json.load(f)
+            
+            # Check for the new format with "annotations" key
+            if "annotations" in raw_roi_data:
+                print(f"DEBUG: Found 'annotations' key in ROI file, using new format")
+                roi_data = raw_roi_data["annotations"]
+            else:
+                print(f"DEBUG: Using legacy ROI format")
+                roi_data = raw_roi_data
+                
+            print(f"DEBUG: Processed ROI data contains {len(roi_data)} frame entries")
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error Loading ROI File",
+                f"Failed to load ROI data: {str(e)}"
+            )
+            return
+            
+        # Show processing message
+        progress_dialog = QMessageBox(
+            QMessageBox.Information,
+            "Processing",
+            f"Generating social attention plots for {movie}...",
+            QMessageBox.NoButton,
+            self
+        )
+        progress_dialog.show()
+        QApplication.processEvents()
+        
+        try:
+            # Create a plot showing time spent on each ROI
+            import matplotlib.pyplot as plt
+            import numpy as np
+            import pandas as pd
+            
+            data = movie_data["data"]
+            
+            print(f"DEBUG: Starting social attention plot generation")
+            print(f"DEBUG: ROI data keys: {list(roi_data.keys())}")
+            print(f"DEBUG: Data shape: {data.shape}, columns: {data.columns}")
+            
+            # Get frame numbers from both data and ROI file
+            if 'frame_number' not in data.columns:
+                raise ValueError("Eye tracking data does not contain frame numbers")
+                
+            print(f"DEBUG: Frame numbers in data: {data['frame_number'].min()} to {data['frame_number'].max()}")
+            
+            # Count time spent on each ROI
+            roi_durations = {}
+            
+            # First, convert frame keys to integers if they're strings
+            frame_keys = {}
+            for key in roi_data.keys():
+                try:
+                    frame_keys[int(key)] = roi_data[key]
+                    # Print a sample of ROI data for the first few frames to debug
+                    if len(frame_keys) <= 3:  # Only show first 3 frames for debugging
+                        roi_sample = roi_data[key]
+                        if roi_sample:  # If the frame has ROIs defined
+                            roi_labels = [roi['label'] for roi in roi_sample if 'label' in roi]
+                            print(f"DEBUG: Frame {key} has {len(roi_sample)} ROIs: {roi_labels}")
+                except ValueError:
+                    print(f"DEBUG: Skipping non-integer key: {key}")
+                    continue  # Skip non-integer keys
+                    
+            if frame_keys:    
+                print(f"DEBUG: Converted {len(frame_keys)} frame keys, range: {min(frame_keys.keys())} to {max(frame_keys.keys())}")
+                
+                # Print a histogram of frame number distribution to help understand spacing
+                frame_numbers = sorted(frame_keys.keys())
+                if len(frame_numbers) > 1:
+                    intervals = [frame_numbers[i+1] - frame_numbers[i] for i in range(len(frame_numbers)-1)]
+                    if intervals:
+                        avg_interval = sum(intervals) / len(intervals)
+                        print(f"DEBUG: Average interval between frames: {avg_interval:.2f}")
+                        print(f"DEBUG: First 10 frame numbers: {frame_numbers[:10]}")
+            else:
+                print(f"DEBUG: No valid frame keys found in ROI data")
+            
+            # Get fixation data
+            fixation_data = data[data['is_fixation_left'] | data['is_fixation_right']]
+            print(f"DEBUG: Found {len(fixation_data)} fixation data points")
+            
+            # Process each fixation
+            processed_count = 0
+            hit_count = 0
+            
+            for _, row in fixation_data.iterrows():
+                if pd.isna(row['frame_number']):
+                    continue
+                    
+                frame_num = int(row['frame_number'])
+                processed_count += 1
+                
+                # Find the nearest frame in ROI data
+                if not frame_keys:
+                    print(f"DEBUG: No frame keys available")
+                    break
+                
+                try:
+                    # We want to process all frames to find ROI hits
+                    # only uncomment for debugging if output gets too verbose
+                    # if processed_count > 200:
+                    #     print(f"DEBUG: Limiting to first 200 frames for debugging")
+                    #     break
+                        
+                    nearest_frame = min(frame_keys.keys(), key=lambda x: abs(x - frame_num))
+                    frame_distance = abs(nearest_frame - frame_num)
+                    
+                    print(f"DEBUG: Frame {frame_num} closest match is ROI frame {nearest_frame}, distance: {frame_distance}")
+                    
+                    # Significantly increase the frame distance tolerance 
+                    # ROI data often has large gaps between defined frames
+                    if frame_distance > 1000:  # Increased to 1000 to handle sparse ROI data
+                        print(f"DEBUG: Frame distance too large ({frame_distance}), skipping")
+                        continue
+                        
+                    if frame_distance > 0:
+                        print(f"DEBUG: Using ROI frame {nearest_frame} for eye tracking frame {frame_num} (distance: {frame_distance})")
+                except Exception as e:
+                    print(f"DEBUG: Error finding nearest frame: {e}")
+                    continue
+                    
+                # Check if the gaze is in any ROI
+                rois_in_frame = frame_keys[nearest_frame]
+                print(f"DEBUG: Frame {frame_num} -> nearest ROI frame {nearest_frame} with {len(rois_in_frame)} ROIs")
+                
+                # Get normalized coordinates
+                if pd.isna(row['x_left']) or pd.isna(row['y_left']):
+                    continue
+                
+                # Print original coordinates for debugging
+                print(f"DEBUG: Original coordinates - x: {row['x_left']}, y: {row['y_left']}")
+                
+                # Check if coordinates need normalization (>1.0 means they're in pixels)
+                if row['x_left'] > 1.0 or row['y_left'] > 1.0:
+                    x_norm = row['x_left'] / self.screen_width
+                    y_norm = row['y_left'] / self.screen_height
+                    print(f"DEBUG: Normalized from pixels - x_norm: {x_norm}, y_norm: {y_norm}")
+                else:
+                    x_norm = row['x_left']
+                    y_norm = row['y_left']
+                    print(f"DEBUG: Already normalized - x_norm: {x_norm}, y_norm: {y_norm}")
+                    
+                # Check each ROI in this frame
+                for roi in rois_in_frame:
+                    if 'label' not in roi or 'coordinates' not in roi:
+                        print(f"DEBUG: Missing label or coordinates in ROI: {roi.keys()}")
+                        continue
+                        
+                    label = roi['label']
+                    coords = roi['coordinates']
+                    
+                    print(f"DEBUG: Checking ROI '{label}' with {len(coords)} coordinate points")
+                    for i, coord in enumerate(coords):
+                        print(f"DEBUG: ROI vertex {i}: x={coord['x']}, y={coord['y']}")
+                    
+                    # Check if point is inside polygon
+                    is_inside = self._point_in_polygon(x_norm, y_norm, coords)
+                    print(f"DEBUG: Point ({x_norm}, {y_norm}) is {'inside' if is_inside else 'outside'} ROI '{label}'")
+                    
+                    if is_inside:
+                        # Add time spent to this ROI
+                        if label not in roi_durations:
+                            roi_durations[label] = 0
+                        roi_durations[label] += 1  # Each fixation counts as one time unit
+                        hit_count += 1
+                        print(f"DEBUG: Hit count increased to {hit_count}, duration for '{label}' = {roi_durations[label]}")
+                        break  # Only count one ROI per fixation
+            
+            print(f"DEBUG: Processed {processed_count} fixations, found {hit_count} ROI hits")
+            print(f"DEBUG: ROI durations: {roi_durations}")
+            
+            # Create the plot
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            # Initialize bars variable to avoid reference errors
+            bars = None
+            
+            # Check if we found any ROI hits
+            if not roi_durations:
+                print(f"DEBUG: No ROI hits found! Creating empty plot with message.")
+                # Display a message on the plot
+                ax.text(0.5, 0.5, "No ROI fixations detected.\nCheck ROI file and eye tracking data alignment.",
+                       horizontalalignment='center', verticalalignment='center',
+                       transform=ax.transAxes, fontsize=14)
+                ax.set_title(f'No ROI Hits Found in {movie}')
+                # Set some reasonable axis limits for empty plot
+                ax.set_xlim(-0.5, 0.5)
+                ax.set_ylim(-0.5, 0.5)
+            else:
+                # Sort ROIs by duration
+                sorted_rois = sorted(roi_durations.items(), key=lambda x: x[1], reverse=True)
+                labels = [item[0] for item in sorted_rois]
+                durations = [item[1] for item in sorted_rois]
+                
+                print(f"DEBUG: Plotting with labels: {labels}")
+                print(f"DEBUG: Plotting with durations: {durations}")
+                
+                # Plot bar chart
+                bars = ax.bar(labels, durations, color='skyblue')
+                
+                # Add value labels on top of bars
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height,
+                            f'{height}',
+                            ha='center', va='bottom')
+                
+                # Add title and labels
+                ax.set_title(f'Time Spent on Each ROI in {movie}')
+                ax.set_xlabel('ROI Label')
+                ax.set_ylabel('Fixation Count')
+                
+                # Rotate x-axis labels if many ROIs
+                if len(labels) > 5:
+                    plt.xticks(rotation=45, ha='right')
+                
+            # Tight layout
+            plt.tight_layout()
+            
+            # Save the plot to the same directory as other plots
+            # First find the plots directory for this movie
+            plots_dir = None
+            
+            # Check if the movie exists in visualization_results
+            if movie in self.visualization_results:
+                # Get any existing plot path for this movie
+                for category, plot_paths in self.visualization_results[movie].items():
+                    if plot_paths:
+                        # Get directory containing the visualization
+                        plots_dir = os.path.dirname(plot_paths[0])
+                        break
+            
+            # If no plots directory found, create one in the output directory
+            if plots_dir is None:
+                # Use the data directory from movie_data
+                data_dir = os.path.dirname(movie_data["data_path"])
+                # Plots directory is typically parallel to data directory
+                plots_dir = os.path.join(data_dir, 'plots')
+                os.makedirs(plots_dir, exist_ok=True)
+            
+            # Create the filename
+            plot_filename = f"social_attention_roi_time_{movie.replace(' ', '_')}.png"
+            plot_path = os.path.join(plots_dir, plot_filename)
+            
+            # Save the figure
+            plt.savefig(plot_path, dpi=100, bbox_inches='tight')
+            plt.close(fig)
+            
+            # Add the plot to visualization results for this movie
+            if movie not in self.visualization_results:
+                self.visualization_results[movie] = {}
+                
+            if 'social' not in self.visualization_results[movie]:
+                self.visualization_results[movie]['social'] = []
+                
+            self.visualization_results[movie]['social'].append(plot_path)
+            
+            # Add the plot to the movie visualizations dictionary
+            if movie not in self.movie_visualizations:
+                self.movie_visualizations[movie] = {}
+                
+            # Add with a display name
+            display_name = "ROI Attention Time"
+            self.movie_visualizations[movie][display_name] = plot_path
+            
+            # Update the visualization dropdown
+            current_index = self.viz_type_combo.currentIndex()
+            self.movie_selected(self.movie_combo.currentIndex())
+            
+            # Set the dropdown to the new visualization
+            for i in range(self.viz_type_combo.count()):
+                if self.viz_type_combo.itemText(i) == display_name:
+                    self.viz_type_combo.setCurrentIndex(i)
+                    break
+            
+            # Close progress dialog
+            progress_dialog.close()
+            
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Plot Generated",
+                f"Social attention plot for {movie} has been generated and added to the visualization dropdown."
+            )
+            
+        except Exception as e:
+            progress_dialog.close()
+            QMessageBox.critical(
+                self,
+                "Error Generating Plot",
+                f"Failed to generate social attention plot: {str(e)}"
+            )
+            
+    def _point_in_polygon(self, x, y, coordinates):
+        """Check if a point is inside a polygon defined by coordinates"""
+        # Extract points from coordinates
+        points = [(coord['x'], coord['y']) for coord in coordinates]
+        
+        print(f"DEBUG: Point-in-polygon check for point ({x}, {y}) against polygon with {len(points)} points")
+        print(f"DEBUG: Polygon vertices: {points}")
+        
+        # Need at least 3 points to form a polygon
+        if len(points) < 3:
+            print(f"DEBUG: Polygon has fewer than 3 points, returning False")
+            return False
+            
+        # Ray casting algorithm
+        inside = False
+        j = len(points) - 1
+        
+        for i in range(len(points)):
+            xi, yi = points[i]
+            xj, yj = points[j]
+            
+            # Check if point is on an edge
+            if (yi == y and xi == x) or (yj == y and xj == x):
+                print(f"DEBUG: Point is exactly on vertex ({xi}, {yi}) or ({xj}, {yj}), returning True")
+                return True
+                
+            # Check if the point is on a horizontal edge
+            if (yi == yj) and (yi == y) and (min(xi, xj) <= x <= max(xi, xj)):
+                print(f"DEBUG: Point is on horizontal edge between ({xi}, {yi}) and ({xj}, {yj}), returning True")
+                return True
+                
+            # Ray casting
+            if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+                inside = not inside
+                print(f"DEBUG: Ray crossed edge between ({xi}, {yi}) and ({xj}, {yj}), inside = {inside}")
+                
+            j = i
+            
+        print(f"DEBUG: Point-in-polygon result: {inside}")
+        return inside
 
     def showEvent(self, event):
         """Handle window show event - make sure the window is maximized on startup"""
