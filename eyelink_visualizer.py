@@ -1016,158 +1016,9 @@ class MovieEyeTrackingVisualizer:
             roi_data: Optional dictionary mapping frame numbers to lists of ROIs (x, y, width, height)
                      Each ROI should be labeled as 'face', 'eyes', or other social element
         """
-        # Validate input data
-        required_columns = ['frame_number']
-        if not self._validate_plot_data(data, required_columns, "Empty dataframe or missing frame data, cannot plot social attention analysis."):
-            return
-
-        # If we don't have specific ROI data, we'll simulate it with frame-based random ROIs
-        # In a real implementation, you would use actual annotated ROI data for accurate analysis
-        if roi_data is None:
-            # Create simulated ROIs for demonstration purposes
-            unique_frames = data['frame_number'].dropna().unique()
-            roi_data = {}
-
-            for frame in unique_frames:
-                if np.isnan(frame):
-                    continue
-
-                # Create simulated ROIs (would be replaced with actual annotated data)
-                # Format: x, y, width, height, label
-                frame_rois = [
-                    # Simulated face ROI
-                    (self.screen_width // 4, self.screen_height // 4,
-                     self.screen_width // 5, self.screen_height // 5, 'face'),
-                    # Simulated eyes ROI
-                    (self.screen_width // 4 + 20, self.screen_height // 4 + 20,
-                     self.screen_width // 10, self.screen_height // 20, 'eyes'),
-                    # Simulated object ROI
-                    (self.screen_width // 2, self.screen_height // 2,
-                     self.screen_width // 8, self.screen_height // 8, 'object')
-                ]
-                roi_data[int(frame)] = frame_rois
-
-        # If we still don't have ROI data, we can't create this visualization
-        if not roi_data:
-            print("No ROI data available for social attention analysis.")
-            return
-
-        # Analyze fixations within ROIs
-        social_attention = {'face': 0, 'eyes': 0, 'other_social': 0, 'non_social': 0}
-        total_fixations = 0
-        fixations_in_rois = []
-
-        # Use either left or right eye data, preferring left if available
-        eye = 'left' if 'x_left' in data.columns and 'y_left' in data.columns else 'right'
-        x_col, y_col = f'x_{eye}', f'y_{eye}'
-        fixation_col = f'is_fixation_{eye}'
-
-        if x_col not in data.columns or y_col not in data.columns or fixation_col not in data.columns:
-            print(f"Required eye tracking data (position or fixation) not available for {eye} eye.")
-            return
-
-        # Filter to fixation data points
-        fixation_data = data[data[fixation_col]]
-
-        # For each fixation, check if it's within any ROI
-        for _, row in fixation_data.iterrows():
-            if pd.isna(row[x_col]) or pd.isna(row[y_col]) or pd.isna(row['frame_number']):
-                continue
-
-            frame = int(row['frame_number'])
-            x, y = row[x_col], row[y_col]
-            total_fixations += 1
-
-            # Check if this frame has ROI data
-            if frame in roi_data:
-                fixation_classified = False
-
-                # Check each ROI in this frame
-                for roi in roi_data[frame]:
-                    roi_x, roi_y, roi_width, roi_height, roi_label = roi
-
-                    # Check if fixation is within this ROI
-                    if (roi_x <= x <= roi_x + roi_width and
-                            roi_y <= y <= roi_y + roi_height):
-
-                        # Categorize the fixation
-                        if roi_label == 'face':
-                            social_attention['face'] += 1
-                            fixations_in_rois.append((frame, x, y, 'face'))
-                            fixation_classified = True
-                        elif roi_label == 'eyes':
-                            social_attention['eyes'] += 1
-                            fixations_in_rois.append((frame, x, y, 'eyes'))
-                            fixation_classified = True
-                        elif 'social' in roi_label:
-                            social_attention['other_social'] += 1
-                            fixations_in_rois.append((frame, x, y, 'other_social'))
-                            fixation_classified = True
-                        else:
-                            social_attention['non_social'] += 1
-                            fixations_in_rois.append((frame, x, y, 'non_social'))
-                            fixation_classified = True
-
-                        # We've categorized this fixation, no need to check other ROIs
-                        break
-
-                # If fixation wasn't in any ROI, count as non-social
-                if not fixation_classified:
-                    social_attention['non_social'] += 1
-            else:
-                # Frame has no ROI data, count as non-social
-                social_attention['non_social'] += 1
-
-        # Calculate percentages
-        if total_fixations > 0:
-            social_percentages = {
-                label: (count / total_fixations) * 100
-                for label, count in social_attention.items()
-            }
-        else:
-            print("No fixations detected for social attention analysis.")
-            return
-
-        # Create figure with 1 row, 2 columns
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(self.default_figsize[0], self.default_figsize[1] // 2))
-
-        # Plot 1: Pie chart of social vs. non-social attention
-        social_sum = social_percentages['face'] + social_percentages['eyes'] + social_percentages['other_social']
-        non_social = social_percentages['non_social']
-
-        pie_labels = ['Social', 'Non-social']
-        pie_values = [social_sum, non_social]
-        pie_colors = ['#4CAF50', '#F44336']  # Green for social, red for non-social
-
-        ax1.pie(pie_values, labels=pie_labels, colors=pie_colors, autopct='%1.1f%%',
-                startangle=90, wedgeprops={'alpha': 0.8})
-        ax1.set_title('Social vs. Non-social Attention', fontsize=14)
-
-        # Plot 2: Detailed breakdown of social attention
-        categories = ['Face', 'Eyes', 'Other Social', 'Non-social']
-        values = [social_percentages['face'], social_percentages['eyes'],
-                  social_percentages['other_social'], social_percentages['non_social']]
-
-        colors = ['#4CAF50', '#8BC34A', '#CDDC39', '#F44336']  # Gradients of green for social, red for non-social
-
-        ax2.bar(categories, values, color=colors, alpha=0.8)
-        ax2.set_title('Detailed Attention Distribution', fontsize=14)
-        ax2.set_ylabel('Percentage of Fixations (%)', fontsize=12)
-        ax2.set_ylim(0, max(values) * 1.2)  # Add some headroom
-
-        # Add value labels on bars
-        for i, v in enumerate(values):
-            ax2.text(i, v + 1, f"{v:.1f}%", ha='center', fontsize=10)
-
-        # Adjust layout
-        plt.tight_layout()
-
-        # Create filename and save the plot
-        filename = self._create_plot_filename(prefix, "social_attention_analysis")
-        self.save_plot(plots_dir, filename, fig)
-
-        # Create an additional visualization showing the distribution of social fixations over time
-        self._plot_social_attention_timeline(data, fixations_in_rois, plots_dir, prefix)
+        # Early return - social attention analysis disabled
+        print("Social attention analysis is disabled - real ROI data required.")
+        return
 
     def _plot_social_attention_timeline(self,
                                         data: pd.DataFrame,
@@ -1183,19 +1034,9 @@ class MovieEyeTrackingVisualizer:
             plots_dir: Path to save the plot
             prefix: Prefix for plot filenames
         """
-        # Validate there is fixation data to plot
-        if not fixations_in_rois:
-            print("No fixation data in ROIs available for timeline visualization.")
-            return
-
-        # Create figure
-        fig, ax = plt.subplots(figsize=self.default_figsize)
-
-        # Sort fixations by frame
-        fixations_in_rois.sort(key=lambda x: x[0])
-
-        # Get frame to timestamp mapping
-        frame_time_map = {}
+        # Early return - social attention timeline disabled
+        print("Social attention timeline is disabled - real ROI data required.")
+        return
         if 'frame_number' in data.columns and 'timestamp' in data.columns:
             for _, row in data.iterrows():
                 if not pd.isna(row['frame_number']):
@@ -1413,6 +1254,23 @@ class MovieEyeTrackingVisualizer:
                     movie_plots['social'].append(timeline_path)
             except Exception as e:
                 print(f"Error generating social attention visualizations: {e}")
+                
+            # 6. Look for ROI-based social attention plots generated by the GUI
+            try:
+                # Check for social attention plot files that might have been generated by the GUI
+                roi_plot_pattern = os.path.join(plots_dir, f"social_attention_roi_time_{movie_name.replace(' ', '_')}.png")
+                if os.path.exists(roi_plot_pattern):
+                    print(f"Found ROI-based social attention plot: {roi_plot_pattern}")
+                    movie_plots['social'].append(roi_plot_pattern)
+                else:
+                    # Try a more general search pattern
+                    import glob
+                    social_roi_files = glob.glob(os.path.join(plots_dir, "social_attention_roi_*.png"))
+                    if social_roi_files:
+                        print(f"Found {len(social_roi_files)} ROI-based social attention plots")
+                        movie_plots['social'].extend(social_roi_files)
+            except Exception as e:
+                print(f"Error searching for ROI-based social attention plots: {e}")
 
             # Store results for this movie
             results[movie_name] = movie_plots
