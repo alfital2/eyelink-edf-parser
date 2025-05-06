@@ -10,6 +10,9 @@ if parent_dir not in sys.path:
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend to avoid thread issues
 
+# Global variable for plot progress tracking
+current_plot_progress = "0/0"  # Will be updated during plot generation
+
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QGridLayout, QPushButton, QLabel, QFileDialog,
                              QComboBox, QCheckBox, QTabWidget, QSplitter, QStackedWidget,
@@ -1320,8 +1323,23 @@ class EyeMovementAnalysisGUI(QMainWindow):
 
         # Get all plot files available for this movie
         available_visualizations = {}
+        
+        # First add any visualizations from our movie_visualizations dictionary
+        # which might include the advanced plots
+        if movie in self.movie_visualizations:
+            for display_name, plot_path in self.movie_visualizations[movie].items():
+                # Skip the Social vs Non-Social Balance plot
+                if "Social vs Non-Social Balance" in display_name:
+                    print(f"DEBUG: Skipping disabled plot: {display_name}")
+                    continue
+                    
+                if os.path.exists(plot_path):
+                    available_visualizations[display_name] = plot_path
+                    print(f"DEBUG: Using existing visualization: {display_name} -> {os.path.basename(plot_path)}")
 
+        # Then search through visualization_results
         for category, plot_paths in self.visualization_results[movie].items():
+            print(f"DEBUG: Processing {len(plot_paths)} plots in category '{category}'")
             for plot_path in plot_paths:
                 if os.path.exists(plot_path):
                     # Extract the base filename without participant prefix
@@ -1329,35 +1347,94 @@ class EyeMovementAnalysisGUI(QMainWindow):
                     # Skip any hidden files
                     if basename.startswith('.'):
                         continue
+                        
+                    # Skip paths we've already added
+                    already_added = False
+                    for existing_path in available_visualizations.values():
+                        if plot_path == existing_path:
+                            already_added = True
+                            break
+                    if already_added:
+                        continue
 
-                    # Remove participant prefix if present (anything before the underscore)
-                    parts = basename.split('_')
-                    if len(parts) > 1:
-                        # If there's a prefix, join everything after the first underscore
-                        cleaned_name = '_'.join(parts[1:])
+                    # For ROI plots, use special handling to create better display names
+                    if "roi_" in basename.lower() or "social_attention" in basename.lower():
+                        if "roi_fixation_sequence" in basename:
+                            display_name = "ROI Fixation Sequence"
+                        elif "roi_transition_matrix" in basename:
+                            display_name = "ROI Transition Matrix"
+                        elif "roi_first_fixation_latency" in basename:
+                            display_name = "ROI First Fixation Latency"
+                        # ROI Dwell Time Comparison removed (merged with ROI Attention Time)
+                        # ROI Revisitation removed as per user request
+                        elif "roi_fixation_duration_distribution" in basename:
+                            display_name = "ROI Fixation Duration Distribution"
+                        elif "roi_temporal_heatmap" in basename:
+                            display_name = "ROI Temporal Heatmap"
+                        elif "social_attention_roi_time" in basename:
+                            display_name = "ROI Attention Time"
+                        else:
+                            # Remove participant prefix if present (anything before the underscore)
+                            parts = basename.split('_')
+                            if len(parts) > 1:
+                                # If there's a prefix, join everything after the first underscore
+                                cleaned_name = '_'.join(parts[1:])
+                            else:
+                                cleaned_name = basename
+
+                            # Remove extension for display name
+                            display_name = os.path.splitext(cleaned_name)[0]
+
+                            # Convert to friendly display name (replace underscores with spaces and capitalize)
+                            display_name = display_name.replace('_', ' ').title()
                     else:
-                        cleaned_name = basename
+                        # Standard handling for non-ROI plots
+                        # Remove participant prefix if present (anything before the underscore)
+                        parts = basename.split('_')
+                        if len(parts) > 1:
+                            # If there's a prefix, join everything after the first underscore
+                            cleaned_name = '_'.join(parts[1:])
+                        else:
+                            cleaned_name = basename
 
-                    # Remove extension for display name
-                    display_name = os.path.splitext(cleaned_name)[0]
+                        # Remove extension for display name
+                        display_name = os.path.splitext(cleaned_name)[0]
 
-                    # Convert to friendly display name (replace underscores with spaces and capitalize)
-                    display_name = display_name.replace('_', ' ').title()
+                        # Convert to friendly display name (replace underscores with spaces and capitalize)
+                        display_name = display_name.replace('_', ' ').title()
 
                     # Store mapping between display name and actual file path
                     available_visualizations[display_name] = plot_path
+                    print(f"DEBUG: Added visualization: {display_name} -> {os.path.basename(plot_path)}")
 
         # Add available visualizations to combo box
         if available_visualizations:
+            # Update movie_visualizations
             self.movie_visualizations[movie] = available_visualizations
             
-            # Add static visualizations
+            # Print available visualizations for debugging
+            print(f"DEBUG: Adding {len(available_visualizations)} visualizations to dropdown:")
+            for viz_name in sorted(available_visualizations.keys()):
+                print(f"DEBUG:   - {viz_name}: {os.path.basename(available_visualizations[viz_name])}")
+            
+            # Clear and add static visualizations
+            self.viz_type_combo.clear()
             self.viz_type_combo.addItems(sorted(available_visualizations.keys()))
             
             # Add animated scanpath visualization option
             self.viz_type_combo.addItem("Animated Scanpath")
             
             self.viz_type_combo.setEnabled(True)
+            
+            # Make sure special ROI visualizations are included
+            roi_entries = [name for name in available_visualizations.keys() 
+                          if "roi" in name.lower() or "fixation sequence" in name.lower() 
+                          or "transition matrix" in name.lower() or "revisitation" in name.lower()]
+            
+            if roi_entries:
+                print(f"DEBUG: Found {len(roi_entries)} ROI-related visualization entries:")
+                for entry in roi_entries:
+                    print(f"DEBUG:   - {entry}")
 
             # Select the first visualization
             self.viz_type_combo.setCurrentIndex(0)
@@ -1586,6 +1663,673 @@ class EyeMovementAnalysisGUI(QMainWindow):
             # Enable the generate social attention plots button
             self.generate_social_btn.setEnabled(True)
     
+    def create_advanced_roi_plots(self, movie, roi_durations, fixation_data, plots_dir, 
+                               frame_keys, frame_range_map, polygon_check_cache, status_label, progress_bar,
+                               update_progress_func=None):
+        """
+        Generate advanced ROI-based social attention plots
+        
+        Args:
+            movie: Name of the movie being analyzed
+            roi_durations: Dictionary with ROI labels as keys and fixation counts as values
+            fixation_data: DataFrame with fixation data
+            plots_dir: Directory to save the plots
+            frame_keys: Dictionary mapping frame numbers to ROI data
+            frame_range_map: Dictionary for fast frame lookup
+            polygon_check_cache: Cache for polygon checks 
+            status_label: Label to update with status
+            progress_bar: Progress bar to update
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import pandas as pd
+        import seaborn as sns
+        from matplotlib.ticker import MaxNLocator
+        from collections import defaultdict
+        
+        if not roi_durations:
+            print("WARNING: No ROI hits found, cannot generate advanced plots")
+            return
+            
+        print(f"DEBUG: Found {len(roi_durations)} ROIs with the following durations:")
+        for roi, duration in sorted(roi_durations.items(), key=lambda x: x[1], reverse=True):
+            print(f"DEBUG:   - {roi}: {duration} fixations")
+            
+        # Sort the roi_durations by value (descending) for consistent ordering in plots
+        sorted_rois = sorted(roi_durations.items(), key=lambda x: x[1], reverse=True)
+        roi_labels = [item[0] for item in sorted_rois]
+        
+        # Create a sequential fixation history to track ROI sequence over time
+        # We'll use this for multiple plots
+        status_label.setText("Analyzing fixation sequence...")
+        progress_bar.setValue(97)
+        QApplication.processEvents()
+        
+        # Initialize data structures for all plots
+        roi_sequence = []  # For Fixation Sequence
+        first_fixation_times = {roi: None for roi in roi_labels}  # For First Fixation Latency
+        roi_revisits = {roi: 0 for roi in roi_labels}  # For Revisitation
+        seen_rois = set()  # Track which ROIs have been seen
+        
+        # For duration distributions (new plot)
+        fixation_durations = {roi: [] for roi in roi_labels}
+        last_fixation_data = {'roi': None, 'start_time': None}
+        
+        # For Temporal Heatmap (new plot)
+        # Create time bins (100ms bins across the entire stimulus)
+        time_bin_size = 0.1  # 100ms bins
+        max_time = fixation_data['timestamp'].max()
+        min_time = fixation_data['timestamp'].min()
+        total_duration = (max_time - min_time) / 1000.0  # in seconds
+        num_bins = int(total_duration / time_bin_size) + 1
+        
+        # Create a 2D array: rows = ROIs, columns = time bins
+        temporal_heatmap = {roi: np.zeros(num_bins) for roi in roi_labels}
+        
+        # For Transition Matrix
+        transition_matrix = defaultdict(lambda: defaultdict(int))
+        last_roi = None
+        
+        # Re-process fixations to collect data for all plots in a single pass
+        fixation_count = len(fixation_data)
+        fixation_data = fixation_data.sort_values(by='timestamp')  # Ensure time ordering
+        
+        # First timestamp for relative timing
+        start_timestamp = fixation_data['timestamp'].min()
+        
+        # Process each fixation
+        for idx, row in fixation_data.iterrows():
+            if pd.isna(row['frame_number']):
+                continue
+                
+            frame_num = int(row['frame_number'])
+            
+            # Find the nearest frame 
+            nearest_frame = None
+            for (start, end), frame in frame_range_map.items():
+                if start <= frame_num < end:
+                    nearest_frame = frame
+                    break
+                    
+            if nearest_frame is None:
+                try:
+                    nearest_frame = min(frame_keys.keys(), key=lambda x: abs(x - frame_num))
+                except:
+                    continue
+                    
+            frame_distance = abs(nearest_frame - frame_num)
+            if frame_distance > 1000:  
+                continue
+                
+            # Get the ROIs for this frame
+            rois_in_frame = frame_keys[nearest_frame]
+            
+            # Get normalized coordinates
+            if row['x_left'] > 1.0 or row['y_left'] > 1.0:
+                x_norm = row['x_left'] / self.screen_width
+                y_norm = row['y_left'] / self.screen_height
+            else:
+                x_norm = row['x_left']
+                y_norm = row['y_left']
+                
+            # Find which ROI the fixation is in, if any
+            current_roi = None
+            for roi in rois_in_frame:
+                if 'label' not in roi or 'coordinates' not in roi:
+                    continue
+                
+                label = roi['label']
+                coords = roi['coordinates']
+                
+                if label not in roi_labels:
+                    continue  # Skip ROIs that didn't make it into the main plot
+                
+                # Use cached polygon checks
+                cache_key = (tuple((coord['x'], coord['y']) for coord in coords), x_norm, y_norm)
+                if cache_key in polygon_check_cache:
+                    is_inside = polygon_check_cache[cache_key]
+                else:
+                    is_inside = self._point_in_polygon(x_norm, y_norm, coords)
+                    polygon_check_cache[cache_key] = is_inside
+                
+                if is_inside:
+                    current_roi = label
+                    break
+                    
+            if current_roi:
+                # Add to sequence
+                timestamp_sec = (row['timestamp'] - start_timestamp) / 1000.0  # Convert to seconds
+                roi_sequence.append((timestamp_sec, current_roi))
+                
+                # Track fixation durations for the new ROI Fixation Duration Distribution plot
+                if last_fixation_data['roi'] == current_roi and last_fixation_data['start_time'] is not None:
+                    # Same ROI as last fixation - continue the duration
+                    pass
+                else:
+                    # Different ROI or first fixation on this ROI
+                    # If we were tracking a previous ROI, save its duration
+                    if last_fixation_data['roi'] is not None and last_fixation_data['start_time'] is not None:
+                        duration = timestamp_sec - last_fixation_data['start_time']
+                        if duration > 0 and duration < 10:  # Filter out unreasonable durations
+                            fixation_durations[last_fixation_data['roi']].append(duration)
+                            if len(fixation_durations[last_fixation_data['roi']]) % 20 == 0:
+                                print(f"DEBUG: Recorded fixation duration of {duration:.2f}s on {last_fixation_data['roi']}")
+                    
+                    # Start tracking the new ROI
+                    last_fixation_data['roi'] = current_roi
+                    last_fixation_data['start_time'] = timestamp_sec
+                
+                # Debug - occasional sample of ROI hits
+                if len(roi_sequence) % 100 == 0:
+                    print(f"DEBUG: Found ROI hit on '{current_roi}' at time {timestamp_sec:.2f}s (fixation #{len(roi_sequence)})")
+                
+                # First fixation time
+                if first_fixation_times[current_roi] is None:
+                    first_fixation_times[current_roi] = timestamp_sec
+                    seen_rois.add(current_roi)
+                    print(f"DEBUG: First fixation on '{current_roi}' at {timestamp_sec:.2f}s")
+                elif current_roi in seen_rois:
+                    # This ROI has been seen before, count as revisit
+                    roi_revisits[current_roi] += 1
+                    
+                # Update temporal heatmap
+                # Calculate which time bin this fixation belongs to
+                time_bin = int((timestamp_sec * 1000) / (time_bin_size * 1000))
+                if time_bin < num_bins:
+                    # Increment the count for this ROI at this time bin
+                    temporal_heatmap[current_roi][time_bin] += 1
+                
+                # Transition matrix
+                if last_roi is not None and last_roi != current_roi:
+                    transition_matrix[last_roi][current_roi] += 1
+                    
+                last_roi = current_roi
+            else:
+                # No ROI in focus - if we were tracking a fixation on an ROI, save its duration and reset
+                timestamp_sec = (row['timestamp'] - start_timestamp) / 1000.0  # Convert to seconds
+                if last_fixation_data['roi'] is not None and last_fixation_data['start_time'] is not None:
+                    duration = timestamp_sec - last_fixation_data['start_time']
+                    if duration > 0 and duration < 10:  # Filter out unreasonable durations
+                        fixation_durations[last_fixation_data['roi']].append(duration)
+                    last_fixation_data['roi'] = None
+                    last_fixation_data['start_time'] = None
+                
+        # 1. ROI Social vs Non-Social Attention Balance Plot - SKIPPED
+        # Variables needed for compatibility with later code
+        social_rois = ['Face', 'Hand', 'Eyes', 'Mouth', 'Person', 'Body']
+        nonsocial_rois = ['Background', 'Object', 'Bed', 'Couch', 'Torso', 'Floor', 'Wall', 'Toy']
+        
+        # Move directly to next plot in sequence
+        if update_progress_func:
+            update_progress_func(2, "Moving to next plot...")
+        else:
+            status_label.setText("Moving to next plot...")
+            QApplication.processEvents()
+        
+        # Create mapping for all ROIs in the data
+        roi_categories = {}
+        for roi in roi_labels:
+            # Try to categorize based on exact matches first
+            if roi in social_rois:
+                roi_categories[roi] = 'Social'
+            elif roi in nonsocial_rois:
+                roi_categories[roi] = 'Non-Social'
+            else:
+                # If no exact match, try partial matching
+                if any(social_term in roi for social_term in ['face', 'hand', 'eye', 'mouth', 'person', 'body']):
+                    roi_categories[roi] = 'Social'
+                else:
+                    roi_categories[roi] = 'Non-Social'
+        
+        print(f"DEBUG: ROI Categories: {roi_categories}")
+        
+        # Compute time spent looking at each ROI category
+        social_time = 0
+        nonsocial_time = 0
+        other_time = 0
+        
+        for roi, duration in roi_durations.items():
+            if roi in roi_categories:
+                if roi_categories[roi] == 'Social':
+                    social_time += duration
+                elif roi_categories[roi] == 'Non-Social':
+                    nonsocial_time += duration
+            else:
+                other_time += duration
+        
+        # Calculate total looking time and percentages
+        total_time = social_time + nonsocial_time + other_time
+        social_pct = (social_time / total_time * 100) if total_time > 0 else 0
+        nonsocial_pct = (nonsocial_time / total_time * 100) if total_time > 0 else 0
+        other_pct = (other_time / total_time * 100) if total_time > 0 else 0
+        
+        print(f"DEBUG: Social time: {social_time:.2f}s ({social_pct:.1f}%)")
+        print(f"DEBUG: Non-social time: {nonsocial_time:.2f}s ({nonsocial_pct:.1f}%)")
+        
+        # Skip creating the social balance plot as requested
+        # Define the path variables needed for compatibility with later code
+        balance_filename = f"roi_social_balance_{movie.replace(' ', '_')}.png"
+        balance_path = os.path.join(plots_dir, balance_filename)
+        
+        # Create the figure and axes to avoid NameError with ax2
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+        
+        # Skip all pie chart visualization code
+        # But keep the axes for the next plot
+        # Sort ROIs by duration
+        sorted_rois = sorted([(roi, time) for roi, time in roi_durations.items()], 
+                             key=lambda x: x[1], reverse=True)
+        
+        # Extract data for plotting
+        roi_names = [item[0] for item in sorted_rois]
+        roi_times = [item[1] for item in sorted_rois]
+        
+        # Define colors based on ROI category
+        bar_colors = [
+            '#ff9999' if roi in roi_categories and roi_categories[roi] == 'Social' else
+            '#66b3ff' if roi in roi_categories and roi_categories[roi] == 'Non-Social' else
+            '#c2c2f0'
+            for roi in roi_names
+        ]
+        
+        # Create the bar chart
+        bars = ax2.barh(roi_names, roi_times, color=bar_colors)
+        
+        # Add social/non-social labels to the bars
+        for i, (roi, time) in enumerate(zip(roi_names, roi_times)):
+            category = roi_categories.get(roi, 'Other')
+            ax2.text(time + 0.1, i, f"{category} ({time:.1f}s)", 
+                    va='center', fontsize=8, alpha=0.7)
+        
+        # Add title and labels
+        # Skip creating and saving the social balance plot
+        print(f"DEBUG: Skipping social balance plot generation (disabled)")
+        
+        # Skip adding to visualization results
+        print(f"DEBUG: Skipping adding ROI Social Balance plot to visualization options")
+            
+        
+        # 2. ROI Transition Matrix Plot
+        if update_progress_func:
+            update_progress_func(3, "Generating ROI Transition Matrix plot...")
+        else:
+            status_label.setText("Generating ROI Transition Matrix plot...")
+            QApplication.processEvents()
+        
+        print(f"DEBUG: Creating ROI Transition Matrix with {sum(sum(v.values()) for v in transition_matrix.values())} transitions")
+        print(f"DEBUG: Transition matrix has {len(transition_matrix)} source ROIs")
+        
+        if transition_matrix:
+            # Create a dense representation for the heatmap
+            transition_array = np.zeros((len(roi_labels), len(roi_labels)))
+            
+            # Fill the transition array
+            for i, from_roi in enumerate(roi_labels):
+                for j, to_roi in enumerate(roi_labels):
+                    transition_array[i, j] = transition_matrix[from_roi][to_roi]
+                    
+            # Create the heatmap
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Use log scale if values range is large
+            try:
+                if np.max(transition_array) > 0:
+                    if np.max(transition_array) / (np.min(transition_array[transition_array > 0]) or 1) > 10:
+                        # Use log normalization for widely varying values
+                        from matplotlib.colors import LogNorm
+                        norm = LogNorm(vmin=max(1, np.min(transition_array[transition_array > 0])), 
+                                     vmax=max(2, np.max(transition_array)))
+                        sns.heatmap(transition_array, cmap="YlOrRd", ax=ax, 
+                                  xticklabels=roi_labels, yticklabels=roi_labels,
+                                  norm=norm, annot=True, fmt=".0f", linewidths=0.5)
+                    else:
+                        # Use regular normalization for more uniform values
+                        sns.heatmap(transition_array, cmap="YlOrRd", ax=ax, 
+                                  xticklabels=roi_labels, yticklabels=roi_labels,
+                                  annot=True, fmt=".0f", linewidths=0.5)
+                else:
+                    # Fallback for empty matrix
+                    sns.heatmap(transition_array, cmap="YlOrRd", ax=ax, 
+                              xticklabels=roi_labels, yticklabels=roi_labels,
+                              annot=True, fmt=".0f", linewidths=0.5)
+            except Exception as e:
+                print(f"ERROR in transition matrix heatmap: {e}")
+                # Use a simpler approach if seaborn fails
+                ax.imshow(transition_array, cmap="YlOrRd")
+                ax.set_xticks(np.arange(len(roi_labels)))
+                ax.set_yticks(np.arange(len(roi_labels)))
+                ax.set_xticklabels(roi_labels)
+                ax.set_yticklabels(roi_labels)
+            
+            # Add title and labels
+            ax.set_title(f'ROI Transition Matrix for {movie}')
+            ax.set_xlabel('To ROI')
+            ax.set_ylabel('From ROI')
+            
+            # Adjust labels for readability
+            plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+            
+            # Tight layout
+            plt.tight_layout()
+            
+            # Save the plot
+            matrix_filename = f"roi_transition_matrix_{movie.replace(' ', '_')}.png"
+            matrix_path = os.path.join(plots_dir, matrix_filename)
+            plt.savefig(matrix_path, dpi=100, bbox_inches='tight')
+            plt.close(fig)
+            
+            # Add to visualization results
+            self.visualization_results[movie]['social'].append(matrix_path)
+            self.movie_visualizations[movie]["ROI Transition Matrix"] = matrix_path
+            
+        
+        # 3. ROI First Fixation Latency Plot
+        if update_progress_func:
+            update_progress_func(4, "Generating ROI First Fixation Latency plot...")
+        else:
+            status_label.setText("Generating ROI First Fixation Latency plot...")
+            QApplication.processEvents()
+        
+        if first_fixation_times:
+            # Filter out ROIs that were never fixated
+            valid_first_times = {roi: time for roi, time in first_fixation_times.items() if time is not None}
+            
+            if valid_first_times:
+                # Sort by first fixation time
+                sorted_latencies = sorted(valid_first_times.items(), key=lambda x: x[1])
+                latency_rois = [item[0] for item in sorted_latencies]
+                latency_times = [item[1] for item in sorted_latencies]
+                
+                # Create the bar chart
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Plot horizontal bars for better readability with many ROIs
+                bars = ax.barh(latency_rois, latency_times, color='skyblue')
+                
+                # Add value labels on the bars
+                for bar in bars:
+                    width = bar.get_width()
+                    ax.text(width + 0.1, bar.get_y() + bar.get_height()/2,
+                            f'{width:.2f}s', va='center')
+                
+                # Add title and labels
+                ax.set_title(f'Time to First Fixation on Each ROI in {movie}')
+                ax.set_xlabel('Time (seconds)')
+                ax.set_ylabel('ROI')
+                
+                # Add gridlines
+                ax.grid(True, linestyle='--', alpha=0.6, axis='x')
+                
+                # Tight layout
+                plt.tight_layout()
+                
+                # Save the plot
+                latency_filename = f"roi_first_fixation_latency_{movie.replace(' ', '_')}.png"
+                latency_path = os.path.join(plots_dir, latency_filename)
+                plt.savefig(latency_path, dpi=100, bbox_inches='tight')
+                plt.close(fig)
+                
+                # Add to visualization results
+                self.visualization_results[movie]['social'].append(latency_path)
+                self.movie_visualizations[movie]["ROI First Fixation Latency"] = latency_path
+                
+        
+        # ROI Dwell Time Comparison - Removed as it's now merged with ROI Attention Time plot
+        # Skip this step in the overall progress
+        # update_overall_progress(5, "Generating ROI Dwell Time Comparison plot...")
+        
+        # We don't need to modify total_plots here, that's handled in the calling function
+        # This line was causing an UnboundLocalError
+        # total_plots -= 1
+                
+        
+        # ROI Revisitation Plot (Removed as per user request)
+        # We still track roi_revisits data for potential future use, but don't generate the plot
+        
+        # Collect some statistics for debugging only
+        if roi_revisits:
+            # Filter to ROIs that were fixated at least once
+            valid_revisits = {roi: count for roi, count in roi_revisits.items() 
+                             if first_fixation_times.get(roi) is not None}
+            
+            # Log some statistics but don't create the plot
+            if valid_revisits:
+                print(f"DEBUG: Revisit counts collected but plot generation skipped")
+                for roi, count in sorted(valid_revisits.items(), key=lambda x: x[1], reverse=True):
+                    print(f"DEBUG:   - {roi}: {count} revisits")
+                
+        # 6. ROI Fixation Duration Distribution plot (NEW)
+        if update_progress_func:
+            update_progress_func(6, "Generating ROI Fixation Duration Distribution plot...")
+        else:
+            status_label.setText("Generating ROI Fixation Duration Distribution plot...")
+            QApplication.processEvents()
+        
+        print(f"DEBUG: Creating ROI Fixation Duration Distribution with data for {sum(1 for durations in fixation_durations.values() if durations)} ROIs")
+        
+        # Filter out ROIs with no duration data
+        valid_durations = {roi: durs for roi, durs in fixation_durations.items() if durs}
+        
+        if valid_durations:
+            # Print statistics about each ROI's durations
+            for roi, durations in valid_durations.items():
+                if durations:
+                    avg_duration = sum(durations) / len(durations)
+                    print(f"DEBUG: {roi} has {len(durations)} fixations with average duration {avg_duration:.2f}s")
+            
+            # Create a violin plot or boxplot for each ROI's fixation durations
+            try:
+                # Create the figure
+                fig, ax = plt.subplots(figsize=(12, 8))
+                
+                # Prepare data for the violin plot
+                data_to_plot = []
+                labels = []
+                
+                # Sort ROIs by median duration for better visualization
+                sorted_rois = sorted(valid_durations.items(), 
+                                    key=lambda x: np.median(x[1]) if x[1] else 0, 
+                                    reverse=True)
+                
+                for roi, durations in sorted_rois:
+                    if durations:  # Skip empty durations
+                        data_to_plot.append(durations)
+                        labels.append(roi)
+                
+                if data_to_plot:
+                    # Select plot type based on number of data points
+                    if all(len(d) >= 5 for d in data_to_plot):
+                        # Use violin plot for sufficient data
+                        sns.violinplot(data=data_to_plot, ax=ax, inner="box", 
+                                      palette="pastel", cut=0)
+                        
+                        # Add individual points for more detail
+                        sns.stripplot(data=data_to_plot, ax=ax, size=3, color=".3", 
+                                     alpha=0.4, jitter=True)
+                    else:
+                        # Use boxplot for less data
+                        sns.boxplot(data=data_to_plot, ax=ax, 
+                                   palette="pastel", whis=1.5)
+                        
+                        # Add individual points 
+                        sns.stripplot(data=data_to_plot, ax=ax, size=4, color=".3", 
+                                     alpha=0.6, jitter=True)
+                    
+                    # Set x-tick labels
+                    ax.set_xticklabels(labels)
+                    
+                    # Add title and labels
+                    ax.set_title(f'Distribution of Fixation Durations by ROI in {movie}')
+                    ax.set_xlabel('ROI')
+                    ax.set_ylabel('Fixation Duration (seconds)')
+                    
+                    # Rotate labels for better readability
+                    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+                    
+                    # Add a legend for quartiles
+                    from matplotlib.patches import Patch
+                    from matplotlib.lines import Line2D
+                    
+                    # Create custom legend elements
+                    legend_elements = [
+                        Line2D([0], [0], color='k', lw=2, label='Median'),
+                        Patch(facecolor='b', alpha=0.3, label='Durations Distribution')
+                    ]
+                    
+                    ax.legend(handles=legend_elements, loc='upper right')
+                    
+                    # Add gridlines
+                    ax.grid(True, linestyle='--', alpha=0.6, axis='y')
+                    
+                    # Tight layout
+                    plt.tight_layout()
+                    
+                    # Save the plot
+                    duration_filename = f"roi_fixation_duration_distribution_{movie.replace(' ', '_')}.png"
+                    duration_path = os.path.join(plots_dir, duration_filename)
+                    
+                    # Make sure the directory exists
+                    os.makedirs(os.path.dirname(duration_path), exist_ok=True)
+                    print(f"DEBUG: Saving ROI Fixation Duration Distribution plot to: {duration_path}")
+                    
+                    plt.savefig(duration_path, dpi=100, bbox_inches='tight')
+                    plt.close(fig)
+                    
+                    # Verify file was created
+                    if os.path.exists(duration_path):
+                        print(f"DEBUG: Successfully saved duration distribution plot to {duration_path}")
+                    else:
+                        print(f"ERROR: Failed to save duration distribution plot to {duration_path}")
+                    
+                    # Add to visualization results
+                    self.visualization_results[movie]['social'].append(duration_path)
+                    print(f"DEBUG: Added ROI Fixation Duration Distribution plot to visualization_results")
+                    
+                    # Make sure the movie is in the dictionary
+                    if movie not in self.movie_visualizations:
+                        self.movie_visualizations[movie] = {}
+                    
+                    # Add to movie_visualizations with display name
+                    self.movie_visualizations[movie]["ROI Fixation Duration Distribution"] = duration_path
+                    print(f"DEBUG: Added ROI Fixation Duration Distribution plot to movie_visualizations")
+            except Exception as e:
+                print(f"ERROR creating ROI Fixation Duration Distribution plot: {e}")
+                import traceback
+                traceback.print_exc()
+                
+        # 7. ROI Temporal Heatmap (NEW)
+        if update_progress_func:
+            update_progress_func(7, "Generating ROI Temporal Heatmap...")
+            progress_bar.setValue(0)  # Reset for new task
+        else:
+            status_label.setText("Generating ROI Temporal Heatmap...")
+            progress_bar.setValue(0)  # Reset for new task
+            QApplication.processEvents()
+        
+        print(f"DEBUG: Creating ROI Temporal Heatmap with {num_bins} time bins")
+        
+        # Check if we have data for the temporal heatmap
+        if temporal_heatmap:
+            try:
+                # Filter out empty ROIs (those with no fixations)
+                active_rois = [roi for roi in roi_labels 
+                              if np.sum(temporal_heatmap[roi]) > 0]
+                
+                if active_rois:
+                    # Create the figure
+                    fig, ax = plt.subplots(figsize=(15, 8))
+                    
+                    # Prepare data for the heatmap
+                    heatmap_data = np.array([temporal_heatmap[roi] for roi in active_rois])
+                    
+                    # Apply smoothing to the heatmap data for better visualization
+                    from scipy.ndimage import gaussian_filter1d
+                    smoothed_data = np.copy(heatmap_data)
+                    for i in range(len(smoothed_data)):
+                        # Apply moderate smoothing
+                        smoothed_data[i] = gaussian_filter1d(smoothed_data[i], sigma=2)
+                    
+                    # Create the heatmap
+                    im = ax.imshow(smoothed_data, aspect='auto', cmap='YlOrRd', interpolation='nearest')
+                    
+                    # Add colorbar
+                    cbar = plt.colorbar(im, ax=ax)
+                    cbar.set_label('Fixation Intensity')
+                    
+                    # Set y-tick labels (ROI names)
+                    ax.set_yticks(np.arange(len(active_rois)))
+                    ax.set_yticklabels(active_rois)
+                    
+                    # Set x-tick labels (time in seconds)
+                    # Place ticks every 1 second
+                    seconds_per_tick = 1.0  # 1 second between ticks
+                    ticks_per_bin = int(seconds_per_tick / time_bin_size)
+                    tick_positions = np.arange(0, num_bins, ticks_per_bin)
+                    tick_labels = [f"{t * time_bin_size:.1f}" for t in tick_positions]
+                    
+                    # Only show a subset of ticks if there are too many
+                    if len(tick_positions) > 20:
+                        tick_positions = tick_positions[::len(tick_positions)//20]
+                        tick_labels = [f"{t * time_bin_size:.1f}" for t in tick_positions]
+                    
+                    ax.set_xticks(tick_positions)
+                    ax.set_xticklabels(tick_labels)
+                    
+                    # Add title and labels
+                    ax.set_title(f'ROI Attention Over Time in {movie}')
+                    ax.set_xlabel('Time (seconds)')
+                    ax.set_ylabel('ROI')
+                    
+                    # Add gridlines
+                    ax.grid(False)
+                    
+                    # Add time markers for significant events
+                    # Calculate mean fixation time per ROI for annotation
+                    for i, roi in enumerate(active_rois):
+                        if first_fixation_times[roi] is not None:
+                            # Mark the first fixation time
+                            first_time_bin = int((first_fixation_times[roi] * 1000) / (time_bin_size * 1000))
+                            if first_time_bin < num_bins:
+                                ax.plot([first_time_bin, first_time_bin], [i-0.4, i+0.4], 'g-', linewidth=1)
+                                ax.text(first_time_bin, i+0.5, 'First', color='green', 
+                                       ha='center', va='bottom', fontsize=8)
+                    
+                    # Tight layout
+                    plt.tight_layout()
+                    
+                    # Save the plot
+                    temporal_filename = f"roi_temporal_heatmap_{movie.replace(' ', '_')}.png"
+                    temporal_path = os.path.join(plots_dir, temporal_filename)
+                    
+                    # Make sure the directory exists
+                    os.makedirs(os.path.dirname(temporal_path), exist_ok=True)
+                    print(f"DEBUG: Saving ROI Temporal Heatmap to: {temporal_path}")
+                    
+                    plt.savefig(temporal_path, dpi=100, bbox_inches='tight')
+                    plt.close(fig)
+                    
+                    # Verify file was created
+                    if os.path.exists(temporal_path):
+                        print(f"DEBUG: Successfully saved temporal heatmap to {temporal_path}")
+                    else:
+                        print(f"ERROR: Failed to save temporal heatmap to {temporal_path}")
+                    
+                    # Add to visualization results
+                    self.visualization_results[movie]['social'].append(temporal_path)
+                    print(f"DEBUG: Added ROI Temporal Heatmap to visualization_results")
+                    
+                    # Make sure the movie is in the dictionary
+                    if movie not in self.movie_visualizations:
+                        self.movie_visualizations[movie] = {}
+                    
+                    # Add to movie_visualizations with display name
+                    self.movie_visualizations[movie]["ROI Temporal Heatmap"] = temporal_path
+                    print(f"DEBUG: Added ROI Temporal Heatmap to movie_visualizations")
+            except Exception as e:
+                print(f"ERROR creating ROI Temporal Heatmap: {e}")
+                import traceback
+                traceback.print_exc()
+
     def generate_social_attention_plots(self):
         """Generate social attention plots based on loaded ROI file"""
         if not self.roi_file_path:
@@ -1643,17 +2387,58 @@ class EyeMovementAnalysisGUI(QMainWindow):
         # Create a progress dialog with a progress bar
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
         progress_dialog = QDialog(self)
-        progress_dialog.setWindowTitle("Generating Social Attention Plot")
-        progress_dialog.setFixedSize(400, 100)
+        progress_dialog.setWindowTitle("Generating Social Attention Plots")
+        progress_dialog.setFixedSize(400, 150)
         
         dialog_layout = QVBoxLayout(progress_dialog)
-        status_label = QLabel(f"Generating plot for {movie}...")
+        
+        # Overall progress status
+        overall_status_label = QLabel(f"Generating plots for {movie}...")
+        overall_status_label.setStyleSheet("font-weight: bold;")
+        dialog_layout.addWidget(overall_status_label)
+        
+        # Overall progress bar
+        overall_progress_bar = QProgressBar()
+        overall_progress_bar.setRange(0, 100)
+        overall_progress_bar.setValue(0)
+        overall_progress_bar.setStyleSheet("QProgressBar {height: 15px;}")
+        dialog_layout.addWidget(overall_progress_bar)
+        
+        # Current task status
+        status_label = QLabel("Preparing data...")
         dialog_layout.addWidget(status_label)
         
+        # Current task progress bar
         progress_bar = QProgressBar()
         progress_bar.setRange(0, 100)
         progress_bar.setValue(0)
         dialog_layout.addWidget(progress_bar)
+        
+        # Define the total number of plot generation steps
+        # 1. ROI Attention Time (basic)
+        # 2. ROI Social vs Non-Social Attention Balance (disabled)
+        # 3. ROI Transition Matrix
+        # 4. ROI First Fixation Latency
+        # 5. ROI Dwell Time Comparison (merged with Attention Time)
+        # 6. ROI Fixation Duration Distribution
+        # 7. ROI Temporal Heatmap
+        total_plots = 6  # Excluding the removed ROI Revisitation plot
+        current_plot = 0
+        
+        # Helper function to update overall progress
+        def update_overall_progress(plot_num, status_text):
+            nonlocal current_plot
+            current_plot = plot_num
+            overall_progress = int((plot_num / total_plots) * 100)
+            overall_progress_bar.setValue(overall_progress)
+            overall_status_label.setText(f"Generating plots for {movie}... ({plot_num}/{total_plots})")
+            status_label.setText(status_text)
+            progress_bar.setValue(0)  # Reset progress for new task
+            QApplication.processEvents()
+            
+            # Add a global progress indicator variable to be used in each plot
+            global current_plot_progress
+            current_plot_progress = f"{plot_num}/{total_plots}"
         
         # Show the dialog (non-modal)
         progress_dialog.show()
@@ -1826,12 +2611,11 @@ class EyeMovementAnalysisGUI(QMainWindow):
             print(f"DEBUG: ROI durations: {roi_durations}")
             
             # Update progress
-            status_label.setText("Creating plot...")
+            update_overall_progress(1, "Creating ROI Attention Time plot...")
             progress_bar.setValue(95)
-            QApplication.processEvents()
             
-            # Create the plot
-            fig, ax = plt.subplots(figsize=(10, 6))
+            # Create the plot - taller to accommodate the explanation text
+            fig, ax = plt.subplots(figsize=(10, 7))
             
             # Initialize bars variable to avoid reference errors
             bars = None
@@ -1853,27 +2637,45 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 labels = [item[0] for item in sorted_rois]
                 durations = [item[1] for item in sorted_rois]
                 
+                # Calculate total fixation time for percentage
+                total_duration = sum(durations)
+                percentages = [(count / total_duration) * 100 for count in durations]
+                
                 # Plot bar chart
                 bars = ax.bar(labels, durations, color='skyblue')
                 
-                # Add value labels on top of bars
-                for bar in bars:
+                # Add value labels with both count and percentage on top of bars
+                for i, bar in enumerate(bars):
                     height = bar.get_height()
+                    percentage = percentages[i]
+                    # Position the raw count on top of the bar
                     ax.text(bar.get_x() + bar.get_width()/2., height,
-                            f'{height}',
-                            ha='center', va='bottom')
+                            f'{int(height)}',
+                            ha='center', va='bottom', fontsize=10)
+                    # Add percentage text in the middle of the bar
+                    ax.text(bar.get_x() + bar.get_width()/2., height/2,
+                            f'{percentage:.1f}%',
+                            ha='center', va='center', fontsize=10, 
+                            color='black', fontweight='bold',
+                            bbox=dict(facecolor='white', alpha=0.7, pad=2, boxstyle='round'))
                 
-                # Add title and labels
+                # Add title and labels with explanation
                 ax.set_title(f'Time Spent on Each ROI in {movie}')
-                ax.set_xlabel('ROI Label')
+                ax.set_xlabel('Region of Interest (ROI)')
                 ax.set_ylabel('Fixation Count')
+                
+                # Remove progress indicator and footnote as requested
+                # This keeps the plot cleaner without pagination indicators or explanatory notes
                 
                 # Rotate x-axis labels if many ROIs
                 if len(labels) > 5:
                     plt.xticks(rotation=45, ha='right')
                 
-            # Tight layout
-            plt.tight_layout()
+            # Tight layout with padding for the explanation text if needed
+            if not roi_durations:
+                plt.tight_layout()
+            else:
+                plt.tight_layout(rect=[0, 0.15, 1, 0.95])  # Add extra space at bottom and top for footnote and progress indicators
             
             # Save the plot to the same directory as other plots
             plots_dir = None
@@ -1924,19 +2726,88 @@ class EyeMovementAnalysisGUI(QMainWindow):
             display_name = "ROI Attention Time"
             self.movie_visualizations[movie][display_name] = plot_path
             
-            # Update the visualization dropdown
-            status_label.setText("Updating UI...")
+            # Make sure the movie is in visualization_results and has a social category
+            if movie not in self.visualization_results:
+                self.visualization_results[movie] = {}
+            if 'social' not in self.visualization_results[movie]:
+                self.visualization_results[movie]['social'] = []
+                
+            # Print current visualization_results structure before generating advanced plots
+            print(f"DEBUG: Before advanced plots, visualization_results structure:")
+            for m in self.visualization_results:
+                print(f"DEBUG:   Movie: {m}")
+                for category, paths in self.visualization_results[m].items():
+                    print(f"DEBUG:     Category: {category}, Plots: {len(paths)}")
+                    for path in paths:
+                        print(f"DEBUG:       - {os.path.basename(path)}")
+                        
+            # Generate advanced ROI plots
+            status_label.setText("Generating advanced ROI plots...")
             progress_bar.setValue(99)
             QApplication.processEvents()
+            try:
+                # Pass the update_overall_progress function to the advanced ROI plots method
+                self.create_advanced_roi_plots(movie, roi_durations, fixation_data, plots_dir, 
+                                             frame_keys, frame_range_map, polygon_check_cache, 
+                                             status_label, progress_bar, update_overall_progress)
+                print(f"DEBUG: Successfully generated advanced ROI plots")
+                # Print how many plots we now have for this movie
+                if movie in self.visualization_results and 'social' in self.visualization_results[movie]:
+                    print(f"DEBUG: Total social plots for {movie}: {len(self.visualization_results[movie]['social'])}")
+                    for i, plot_path in enumerate(self.visualization_results[movie]['social']):
+                        print(f"DEBUG: Plot {i+1}: {os.path.basename(plot_path)}")
+                        
+                # Debug check if plots actually exist on disk
+                plot_found = False
+                for pattern in ["roi_fixation_sequence_*.png", "roi_transition_matrix_*.png"]:
+                    try:
+                        import glob
+                        matching_files = glob.glob(os.path.join(plots_dir, pattern))
+                        if matching_files:
+                            print(f"DEBUG: Found {len(matching_files)} files matching {pattern} in {plots_dir}")
+                            for f in matching_files:
+                                print(f"DEBUG:   - {os.path.basename(f)}")
+                                plot_found = True
+                        else:
+                            print(f"DEBUG: No files matching {pattern} in {plots_dir}")
+                    except Exception as e:
+                        print(f"DEBUG: Error searching for {pattern}: {e}")
+                        
+                if not plot_found:
+                    print(f"WARNING: No advanced plot files found on disk after generation!")
+            except Exception as e:
+                print(f"Error generating advanced ROI plots: {e}")
+                import traceback
+                traceback.print_exc()
+                
+            # Update the visualization dropdown
+            update_overall_progress(total_plots, "Completing plot generation... Updating UI")
+            progress_bar.setValue(99)
             
-            current_index = self.viz_type_combo.currentIndex()
+            # Store the current selection to restore after refresh
+            current_viz = self.viz_type_combo.currentText() if self.viz_type_combo.currentIndex() >= 0 else None
+            
+            # Refresh the visualization dropdown to include all plots (basic and advanced)
             self.movie_selected(self.movie_combo.currentIndex())
             
-            # Set the dropdown to the new visualization
+            # Print available visualizations
+            print(f"DEBUG: Available visualizations after refresh:")
+            for vizname in [self.viz_type_combo.itemText(i) for i in range(self.viz_type_combo.count())]:
+                print(f"DEBUG:   - {vizname}")
+                
+            # First try to show the initial plot we just created
+            plot_shown = False
             for i in range(self.viz_type_combo.count()):
-                if self.viz_type_combo.itemText(i) == display_name:
+                viz_name = self.viz_type_combo.itemText(i)
+                if viz_name == display_name:
                     self.viz_type_combo.setCurrentIndex(i)
+                    plot_shown = True
                     break
+                    
+            # If the dropdown has been updated, also show one of the advanced plots
+            if not plot_shown and self.viz_type_combo.count() > 0:
+                # Show the first item in the dropdown
+                self.viz_type_combo.setCurrentIndex(0)
             
             # Close progress dialog
             progress_dialog.close()
@@ -1965,7 +2836,14 @@ class EyeMovementAnalysisGUI(QMainWindow):
                     # Generate a new report
                     report_dir = os.path.dirname(self.report_path)
                     visualizer.generate_report(self.visualization_results, report_dir)
-                    print(f"Regenerated HTML report to include new social attention plot")
+                    print(f"Regenerated HTML report to include new social attention plots")
+                    
+                    # Print out total number of plots included in the report
+                    total_plots = 0
+                    for m, categories in self.visualization_results.items():
+                        for category, plots in categories.items():
+                            total_plots += len(plots)
+                    print(f"DEBUG: Report contains {total_plots} total plots")
                     
                     # Show success message with report information
                     QMessageBox.information(
@@ -2032,6 +2910,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
             
         return inside
 
+    
     def showEvent(self, event):
         """Handle window show event - make sure the window is maximized on startup"""
         super().showEvent(event)
