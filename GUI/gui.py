@@ -1924,6 +1924,24 @@ class EyeMovementAnalysisGUI(QMainWindow):
             display_name = "ROI Attention Time"
             self.movie_visualizations[movie][display_name] = plot_path
             
+            # Generate additional social attention plots
+            status_label.setText("Generating advanced ROI plots...")
+            progress_bar.setValue(96)
+            QApplication.processEvents()
+            
+            # Generate all additional plots using the collected data
+            self.generate_advanced_roi_plots(
+                movie, 
+                roi_durations, 
+                fixation_data, 
+                plots_dir, 
+                frame_keys,
+                frame_range_map,
+                polygon_check_cache,
+                status_label,
+                progress_bar
+            )
+            
             # Update the visualization dropdown
             status_label.setText("Updating UI...")
             progress_bar.setValue(99)
@@ -2032,6 +2050,422 @@ class EyeMovementAnalysisGUI(QMainWindow):
             
         return inside
 
+    def generate_advanced_roi_plots(self, movie, roi_durations, fixation_data, plots_dir, 
+                               frame_keys, frame_range_map, polygon_check_cache, status_label, progress_bar):
+        """
+        Generate advanced ROI-based social attention plots
+        
+        Args:
+            movie: Name of the movie being analyzed
+            roi_durations: Dictionary with ROI labels as keys and fixation counts as values
+            fixation_data: DataFrame with fixation data
+            plots_dir: Directory to save the plots
+            frame_keys: Dictionary mapping frame numbers to ROI data
+            frame_range_map: Dictionary for fast frame lookup
+            polygon_check_cache: Cache for polygon checks 
+            status_label: Label to update with status
+            progress_bar: Progress bar to update
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import pandas as pd
+        import seaborn as sns
+        from matplotlib.ticker import MaxNLocator
+        from collections import defaultdict
+        
+        if not roi_durations:
+            print("No ROI hits found, cannot generate advanced plots")
+            return
+            
+        # Sort the roi_durations by value (descending) for consistent ordering in plots
+        sorted_rois = sorted(roi_durations.items(), key=lambda x: x[1], reverse=True)
+        roi_labels = [item[0] for item in sorted_rois]
+        
+        # Create a sequential fixation history to track ROI sequence over time
+        # We'll use this for multiple plots
+        status_label.setText("Analyzing fixation sequence...")
+        progress_bar.setValue(97)
+        QApplication.processEvents()
+        
+        # Initialize data structures for all plots
+        roi_sequence = []  # For Fixation Sequence
+        first_fixation_times = {roi: None for roi in roi_labels}  # For First Fixation Latency
+        roi_revisits = {roi: 0 for roi in roi_labels}  # For Revisitation
+        seen_rois = set()  # Track which ROIs have been seen
+        
+        # For Transition Matrix
+        transition_matrix = defaultdict(lambda: defaultdict(int))
+        last_roi = None
+        
+        # Re-process fixations to collect data for all plots in a single pass
+        fixation_count = len(fixation_data)
+        fixation_data = fixation_data.sort_values(by='timestamp')  # Ensure time ordering
+        
+        # First timestamp for relative timing
+        start_timestamp = fixation_data['timestamp'].min()
+        
+        # Process each fixation
+        for idx, row in fixation_data.iterrows():
+            if pd.isna(row['frame_number']):
+                continue
+                
+            frame_num = int(row['frame_number'])
+            
+            # Find the nearest frame 
+            nearest_frame = None
+            for (start, end), frame in frame_range_map.items():
+                if start <= frame_num < end:
+                    nearest_frame = frame
+                    break
+                    
+            if nearest_frame is None:
+                try:
+                    nearest_frame = min(frame_keys.keys(), key=lambda x: abs(x - frame_num))
+                except:
+                    continue
+                    
+            frame_distance = abs(nearest_frame - frame_num)
+            if frame_distance > 1000:  
+                continue
+                
+            # Get the ROIs for this frame
+            rois_in_frame = frame_keys[nearest_frame]
+            
+            # Get normalized coordinates
+            if row['x_left'] > 1.0 or row['y_left'] > 1.0:
+                x_norm = row['x_left'] / self.screen_width
+                y_norm = row['y_left'] / self.screen_height
+            else:
+                x_norm = row['x_left']
+                y_norm = row['y_left']
+                
+            # Find which ROI the fixation is in, if any
+            current_roi = None
+            for roi in rois_in_frame:
+                if 'label' not in roi or 'coordinates' not in roi:
+                    continue
+                
+                label = roi['label']
+                coords = roi['coordinates']
+                
+                if label not in roi_labels:
+                    continue  # Skip ROIs that didn't make it into the main plot
+                
+                # Use cached polygon checks
+                cache_key = (tuple((coord['x'], coord['y']) for coord in coords), x_norm, y_norm)
+                if cache_key in polygon_check_cache:
+                    is_inside = polygon_check_cache[cache_key]
+                else:
+                    is_inside = self._point_in_polygon(x_norm, y_norm, coords)
+                    polygon_check_cache[cache_key] = is_inside
+                
+                if is_inside:
+                    current_roi = label
+                    break
+                    
+            if current_roi:
+                # Add to sequence
+                timestamp_sec = (row['timestamp'] - start_timestamp) / 1000.0  # Convert to seconds
+                roi_sequence.append((timestamp_sec, current_roi))
+                
+                # First fixation time
+                if first_fixation_times[current_roi] is None:
+                    first_fixation_times[current_roi] = timestamp_sec
+                    seen_rois.add(current_roi)
+                elif current_roi in seen_rois:
+                    # This ROI has been seen before, count as revisit
+                    roi_revisits[current_roi] += 1
+                
+                # Transition matrix
+                if last_roi is not None and last_roi != current_roi:
+                    transition_matrix[last_roi][current_roi] += 1
+                    
+                last_roi = current_roi
+                
+        # 1. ROI Fixation Sequence Plot
+        status_label.setText("Generating ROI sequence plot...")
+        QApplication.processEvents()
+        
+        if len(roi_sequence) > 1:
+            # Create sequence plot
+            fig, ax = plt.subplots(figsize=(12, 5))
+            
+            # Extract times and ROIs
+            times = [item[0] for item in roi_sequence]
+            sequence_rois = [item[1] for item in roi_sequence]
+            
+            # Create a colormap for ROIs
+            import matplotlib.cm as cm
+            from matplotlib.colors import ListedColormap
+            
+            # Create a categorical colormap based on number of ROIs
+            n_rois = len(roi_labels)
+            color_map = plt.cm.get_cmap('tab10', n_rois)
+            
+            # Create a lookup dictionary for ROI to color index
+            roi_to_index = {roi: i for i, roi in enumerate(roi_labels)}
+            
+            # Plot vertical lines for each fixation colored by ROI
+            for i in range(len(times) - 1):
+                roi = sequence_rois[i]
+                color_idx = roi_to_index[roi]
+                
+                # Draw a vertical line for each fixation, height based on ROI index
+                ax.plot([times[i], times[i]], [0, n_rois], color=color_map(color_idx), alpha=0.7)
+                
+                # Connect sequential fixations on the same ROI with horizontal lines
+                if i > 0 and sequence_rois[i] == sequence_rois[i-1]:
+                    y_pos = roi_to_index[roi] + 0.5  # Center of the ROI level
+                    ax.plot([times[i-1], times[i]], [y_pos, y_pos], color=color_map(color_idx), linewidth=2)
+                
+            # Add ROI labels to y-axis
+            plt.yticks(np.arange(n_rois) + 0.5, roi_labels)
+            
+            # Add title and labels
+            ax.set_title(f'ROI Fixation Sequence for {movie}')
+            ax.set_xlabel('Time (seconds)')
+            ax.set_ylabel('ROI')
+            
+            # Set sensible limits
+            ax.set_xlim(0, max(times))
+            ax.set_ylim(0, n_rois)
+            
+            # Add gridlines for readability
+            ax.grid(True, linestyle='--', alpha=0.6)
+            
+            # Tight layout
+            plt.tight_layout()
+            
+            # Save the plot
+            sequence_filename = f"roi_fixation_sequence_{movie.replace(' ', '_')}.png"
+            sequence_path = os.path.join(plots_dir, sequence_filename)
+            plt.savefig(sequence_path, dpi=100, bbox_inches='tight')
+            plt.close(fig)
+            
+            # Add to visualization results
+            self.visualization_results[movie]['social'].append(sequence_path)
+            self.movie_visualizations[movie]["ROI Fixation Sequence"] = sequence_path
+            
+        
+        # 2. ROI Transition Matrix Plot
+        status_label.setText("Generating transition matrix...")
+        QApplication.processEvents()
+        
+        if transition_matrix:
+            # Create a dense representation for the heatmap
+            transition_array = np.zeros((len(roi_labels), len(roi_labels)))
+            
+            # Fill the transition array
+            for i, from_roi in enumerate(roi_labels):
+                for j, to_roi in enumerate(roi_labels):
+                    transition_array[i, j] = transition_matrix[from_roi][to_roi]
+                    
+            # Create the heatmap
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Use log scale if values range is large
+            if np.max(transition_array) > 0:
+                if np.max(transition_array) / (np.min(transition_array[transition_array > 0]) or 1) > 10:
+                    # Use log normalization for widely varying values
+                    from matplotlib.colors import LogNorm
+                    norm = LogNorm(vmin=max(1, np.min(transition_array[transition_array > 0])), 
+                                 vmax=max(2, np.max(transition_array)))
+                    sns.heatmap(transition_array, cmap="YlOrRd", ax=ax, 
+                              xticklabels=roi_labels, yticklabels=roi_labels,
+                              norm=norm, annot=True, fmt=".0f", linewidths=0.5)
+                else:
+                    # Use regular normalization for more uniform values
+                    sns.heatmap(transition_array, cmap="YlOrRd", ax=ax, 
+                              xticklabels=roi_labels, yticklabels=roi_labels,
+                              annot=True, fmt=".0f", linewidths=0.5)
+            else:
+                # Fallback for empty matrix
+                sns.heatmap(transition_array, cmap="YlOrRd", ax=ax, 
+                          xticklabels=roi_labels, yticklabels=roi_labels,
+                          annot=True, fmt=".0f", linewidths=0.5)
+            
+            # Add title and labels
+            ax.set_title(f'ROI Transition Matrix for {movie}')
+            ax.set_xlabel('To ROI')
+            ax.set_ylabel('From ROI')
+            
+            # Adjust labels for readability
+            plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+            
+            # Tight layout
+            plt.tight_layout()
+            
+            # Save the plot
+            matrix_filename = f"roi_transition_matrix_{movie.replace(' ', '_')}.png"
+            matrix_path = os.path.join(plots_dir, matrix_filename)
+            plt.savefig(matrix_path, dpi=100, bbox_inches='tight')
+            plt.close(fig)
+            
+            # Add to visualization results
+            self.visualization_results[movie]['social'].append(matrix_path)
+            self.movie_visualizations[movie]["ROI Transition Matrix"] = matrix_path
+            
+        
+        # 3. ROI First Fixation Latency Plot
+        status_label.setText("Generating latency plot...")
+        QApplication.processEvents()
+        
+        if first_fixation_times:
+            # Filter out ROIs that were never fixated
+            valid_first_times = {roi: time for roi, time in first_fixation_times.items() if time is not None}
+            
+            if valid_first_times:
+                # Sort by first fixation time
+                sorted_latencies = sorted(valid_first_times.items(), key=lambda x: x[1])
+                latency_rois = [item[0] for item in sorted_latencies]
+                latency_times = [item[1] for item in sorted_latencies]
+                
+                # Create the bar chart
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Plot horizontal bars for better readability with many ROIs
+                bars = ax.barh(latency_rois, latency_times, color='skyblue')
+                
+                # Add value labels on the bars
+                for bar in bars:
+                    width = bar.get_width()
+                    ax.text(width + 0.1, bar.get_y() + bar.get_height()/2,
+                            f'{width:.2f}s', va='center')
+                
+                # Add title and labels
+                ax.set_title(f'Time to First Fixation on Each ROI in {movie}')
+                ax.set_xlabel('Time (seconds)')
+                ax.set_ylabel('ROI')
+                
+                # Add gridlines
+                ax.grid(True, linestyle='--', alpha=0.6, axis='x')
+                
+                # Tight layout
+                plt.tight_layout()
+                
+                # Save the plot
+                latency_filename = f"roi_first_fixation_latency_{movie.replace(' ', '_')}.png"
+                latency_path = os.path.join(plots_dir, latency_filename)
+                plt.savefig(latency_path, dpi=100, bbox_inches='tight')
+                plt.close(fig)
+                
+                # Add to visualization results
+                self.visualization_results[movie]['social'].append(latency_path)
+                self.movie_visualizations[movie]["ROI First Fixation Latency"] = latency_path
+                
+        
+        # 4. ROI Dwell Time Comparison
+        status_label.setText("Generating dwell time comparison...")
+        QApplication.processEvents()
+        
+        if roi_durations:
+            # Calculate total fixation time for percentage
+            total_duration = sum(roi_durations.values())
+            if total_duration > 0:
+                # Calculate percentages
+                percentages = {roi: (count / total_duration) * 100 for roi, count in roi_durations.items()}
+                
+                # Sort by percentage (descending)
+                sorted_percentages = sorted(percentages.items(), key=lambda x: x[1], reverse=True)
+                percentage_rois = [item[0] for item in sorted_percentages]
+                percentage_values = [item[1] for item in sorted_percentages]
+                
+                # Create the bar chart
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Plot the bars
+                bars = ax.bar(percentage_rois, percentage_values, color='lightgreen')
+                
+                # Add value labels on top of bars
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height,
+                            f'{height:.1f}%', ha='center', va='bottom')
+                
+                # Add title and labels
+                ax.set_title(f'Percentage of Fixation Time per ROI in {movie}')
+                ax.set_xlabel('ROI')
+                ax.set_ylabel('Percentage of Total Fixation Time (%)')
+                
+                # Set y-axis to 100% maximum for context
+                ax.set_ylim(0, min(100, max(percentage_values) * 1.2))
+                
+                # Rotate x-axis labels if many ROIs
+                if len(percentage_rois) > 5:
+                    plt.xticks(rotation=45, ha='right')
+                
+                # Add gridlines
+                ax.grid(True, linestyle='--', alpha=0.6, axis='y')
+                
+                # Tight layout
+                plt.tight_layout()
+                
+                # Save the plot
+                dwell_filename = f"roi_dwell_time_comparison_{movie.replace(' ', '_')}.png"
+                dwell_path = os.path.join(plots_dir, dwell_filename)
+                plt.savefig(dwell_path, dpi=100, bbox_inches='tight')
+                plt.close(fig)
+                
+                # Add to visualization results
+                self.visualization_results[movie]['social'].append(dwell_path)
+                self.movie_visualizations[movie]["ROI Dwell Time Comparison"] = dwell_path
+                
+        
+        # 5. ROI Revisitation Plot
+        status_label.setText("Generating revisitation plot...")
+        QApplication.processEvents()
+        
+        if roi_revisits:
+            # Filter to ROIs that were fixated at least once
+            valid_revisits = {roi: count for roi, count in roi_revisits.items() 
+                             if first_fixation_times.get(roi) is not None}
+            
+            if valid_revisits:
+                # Sort by revisit count (descending)
+                sorted_revisits = sorted(valid_revisits.items(), key=lambda x: x[1], reverse=True)
+                revisit_rois = [item[0] for item in sorted_revisits]
+                revisit_counts = [item[1] for item in sorted_revisits]
+                
+                # Create the bar chart
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Plot the bars
+                bars = ax.bar(revisit_rois, revisit_counts, color='salmon')
+                
+                # Add value labels on top of bars
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height,
+                            f'{int(height)}', ha='center', va='bottom')
+                
+                # Add title and labels
+                ax.set_title(f'Number of Revisits to Each ROI in {movie}')
+                ax.set_xlabel('ROI')
+                ax.set_ylabel('Number of Revisits')
+                
+                # Use integer ticks on y-axis
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+                
+                # Rotate x-axis labels if many ROIs
+                if len(revisit_rois) > 5:
+                    plt.xticks(rotation=45, ha='right')
+                
+                # Add gridlines
+                ax.grid(True, linestyle='--', alpha=0.6, axis='y')
+                
+                # Tight layout
+                plt.tight_layout()
+                
+                # Save the plot
+                revisit_filename = f"roi_revisitation_{movie.replace(' ', '_')}.png"
+                revisit_path = os.path.join(plots_dir, revisit_filename)
+                plt.savefig(revisit_path, dpi=100, bbox_inches='tight')
+                plt.close(fig)
+                
+                # Add to visualization results
+                self.visualization_results[movie]['social'].append(revisit_path)
+                self.movie_visualizations[movie]["ROI Revisitation"] = revisit_path
+    
     def showEvent(self, event):
         """Handle window show event - make sure the window is maximized on startup"""
         super().showEvent(event)
