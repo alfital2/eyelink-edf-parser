@@ -1640,14 +1640,22 @@ class EyeMovementAnalysisGUI(QMainWindow):
             )
             return
             
-        # Show processing message
-        progress_dialog = QMessageBox(
-            QMessageBox.Information,
-            "Processing",
-            f"Generating social attention plots for {movie}...",
-            QMessageBox.NoButton,
-            self
-        )
+        # Create a progress dialog with a progress bar
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
+        progress_dialog = QDialog(self)
+        progress_dialog.setWindowTitle("Generating Social Attention Plot")
+        progress_dialog.setFixedSize(400, 100)
+        
+        dialog_layout = QVBoxLayout(progress_dialog)
+        status_label = QLabel(f"Generating plot for {movie}...")
+        dialog_layout.addWidget(status_label)
+        
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 100)
+        progress_bar.setValue(0)
+        dialog_layout.addWidget(progress_bar)
+        
+        # Show the dialog (non-modal)
         progress_dialog.show()
         QApplication.processEvents()
         
@@ -1668,120 +1676,143 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 raise ValueError("Eye tracking data does not contain frame numbers")
                 
             print(f"DEBUG: Frame numbers in data: {data['frame_number'].min()} to {data['frame_number'].max()}")
+            status_label.setText("Processing ROI data...")
+            progress_bar.setValue(10)
+            QApplication.processEvents()
             
             # Count time spent on each ROI
             roi_durations = {}
             
-            # First, convert frame keys to integers if they're strings
+            # First, convert frame keys to integers if they're strings - OPTIMIZATION: Do this once and cache
             frame_keys = {}
             for key in roi_data.keys():
                 try:
                     frame_keys[int(key)] = roi_data[key]
-                    # Print a sample of ROI data for the first few frames to debug
-                    if len(frame_keys) <= 3:  # Only show first 3 frames for debugging
+                    # Only print a sample for debugging
+                    if len(frame_keys) <= 3:
                         roi_sample = roi_data[key]
-                        if roi_sample:  # If the frame has ROIs defined
+                        if roi_sample:
                             roi_labels = [roi['label'] for roi in roi_sample if 'label' in roi]
                             print(f"DEBUG: Frame {key} has {len(roi_sample)} ROIs: {roi_labels}")
                 except ValueError:
                     print(f"DEBUG: Skipping non-integer key: {key}")
-                    continue  # Skip non-integer keys
-                    
-            if frame_keys:    
-                print(f"DEBUG: Converted {len(frame_keys)} frame keys, range: {min(frame_keys.keys())} to {max(frame_keys.keys())}")
+                    continue
+            
+            if not frame_keys:
+                print(f"DEBUG: No valid frame keys found in ROI data")
+                raise ValueError("No valid frame keys found in ROI data")
+            
+            status_label.setText("Analyzing fixations...")
+            progress_bar.setValue(20)
+            QApplication.processEvents()
                 
-                # Print a histogram of frame number distribution to help understand spacing
-                frame_numbers = sorted(frame_keys.keys())
+            # OPTIMIZATION: Pre-process ROI data for faster lookup
+            # Create a frame range map to quickly find the nearest frame
+            frame_numbers = sorted(frame_keys.keys())
+            frame_range_map = {}
+            
+            if frame_numbers:
+                # Print some statistics about the frame distribution
+                print(f"DEBUG: Frame key range: {min(frame_numbers)} to {max(frame_numbers)}")
                 if len(frame_numbers) > 1:
+                    # Calculate average interval between frames
                     intervals = [frame_numbers[i+1] - frame_numbers[i] for i in range(len(frame_numbers)-1)]
                     if intervals:
                         avg_interval = sum(intervals) / len(intervals)
                         print(f"DEBUG: Average interval between frames: {avg_interval:.2f}")
-                        print(f"DEBUG: First 10 frame numbers: {frame_numbers[:10]}")
-            else:
-                print(f"DEBUG: No valid frame keys found in ROI data")
+                
+                # Create a map of frame ranges for faster nearest frame lookups
+                for i, frame in enumerate(frame_numbers):
+                    if i == 0:
+                        # For the first frame, use it for anything less than the midpoint to the next frame
+                        next_frame = frame_numbers[i+1] if i+1 < len(frame_numbers) else frame + 1000
+                        frame_range_map[(0, (frame + next_frame)//2)] = frame
+                    elif i == len(frame_numbers) - 1:
+                        # For the last frame, use it for anything greater than the midpoint from the previous frame
+                        prev_frame = frame_numbers[i-1]
+                        frame_range_map[((prev_frame + frame)//2, float('inf'))] = frame
+                    else:
+                        # For middle frames, use the midpoints between adjacent frames
+                        prev_frame = frame_numbers[i-1]
+                        next_frame = frame_numbers[i+1]
+                        frame_range_map[((prev_frame + frame)//2, (frame + next_frame)//2)] = frame
             
-            # Get fixation data
+            # Get fixation data - OPTIMIZATION: Filter for valid frames
             fixation_data = data[data['is_fixation_left'] | data['is_fixation_right']]
-            print(f"DEBUG: Found {len(fixation_data)} fixation data points")
+            fixation_data = fixation_data.dropna(subset=['frame_number', 'x_left', 'y_left'])
+            fixation_count = len(fixation_data)
+            print(f"DEBUG: Found {fixation_count} valid fixation data points")
             
-            # Process each fixation
+            # Process fixations in batches for better progress reporting
             processed_count = 0
             hit_count = 0
+            batch_size = max(1, fixation_count // 50)  # ~50 progress updates
             
-            for _, row in fixation_data.iterrows():
-                if pd.isna(row['frame_number']):
-                    continue
-                    
+            # OPTIMIZATION: Cache polygon checks to avoid redundant calculations
+            polygon_check_cache = {}
+            
+            # Process each fixation
+            for idx, row in fixation_data.iterrows():
                 frame_num = int(row['frame_number'])
                 processed_count += 1
                 
-                # Find the nearest frame in ROI data
-                if not frame_keys:
-                    print(f"DEBUG: No frame keys available")
-                    break
+                # Update progress every batch
+                if processed_count % batch_size == 0:
+                    progress = 20 + int(75 * processed_count / fixation_count)
+                    progress_bar.setValue(progress)
+                    status_label.setText(f"Processing fixations: {processed_count}/{fixation_count}")
+                    QApplication.processEvents()
                 
-                try:
-                    # We want to process all frames to find ROI hits
-                    # only uncomment for debugging if output gets too verbose
-                    # if processed_count > 200:
-                    #     print(f"DEBUG: Limiting to first 200 frames for debugging")
-                    #     break
+                # Find the nearest frame in ROI data - OPTIMIZATION: Use frame range map for faster lookup
+                nearest_frame = None
+                
+                # Try the frame range map first
+                for (start, end), frame in frame_range_map.items():
+                    if start <= frame_num < end:
+                        nearest_frame = frame
+                        break
                         
-                    nearest_frame = min(frame_keys.keys(), key=lambda x: abs(x - frame_num))
-                    frame_distance = abs(nearest_frame - frame_num)
-                    
-                    print(f"DEBUG: Frame {frame_num} closest match is ROI frame {nearest_frame}, distance: {frame_distance}")
-                    
-                    # Significantly increase the frame distance tolerance 
-                    # ROI data often has large gaps between defined frames
-                    if frame_distance > 1000:  # Increased to 1000 to handle sparse ROI data
-                        print(f"DEBUG: Frame distance too large ({frame_distance}), skipping")
+                # If no match in the range map, fall back to the slower nearest neighbor approach
+                if nearest_frame is None:
+                    try:
+                        nearest_frame = min(frame_keys.keys(), key=lambda x: abs(x - frame_num))
+                    except Exception as e:
+                        print(f"DEBUG: Error finding nearest frame: {e}")
                         continue
-                        
-                    if frame_distance > 0:
-                        print(f"DEBUG: Using ROI frame {nearest_frame} for eye tracking frame {frame_num} (distance: {frame_distance})")
-                except Exception as e:
-                    print(f"DEBUG: Error finding nearest frame: {e}")
+                
+                frame_distance = abs(nearest_frame - frame_num)
+                
+                # Skip if the frame distance is too large
+                if frame_distance > 1000:  # Use a threshold based on your data
                     continue
-                    
-                # Check if the gaze is in any ROI
+                
+                # Get the ROIs for this frame
                 rois_in_frame = frame_keys[nearest_frame]
-                print(f"DEBUG: Frame {frame_num} -> nearest ROI frame {nearest_frame} with {len(rois_in_frame)} ROIs")
                 
                 # Get normalized coordinates
-                if pd.isna(row['x_left']) or pd.isna(row['y_left']):
-                    continue
-                
-                # Print original coordinates for debugging
-                print(f"DEBUG: Original coordinates - x: {row['x_left']}, y: {row['y_left']}")
-                
-                # Check if coordinates need normalization (>1.0 means they're in pixels)
                 if row['x_left'] > 1.0 or row['y_left'] > 1.0:
                     x_norm = row['x_left'] / self.screen_width
                     y_norm = row['y_left'] / self.screen_height
-                    print(f"DEBUG: Normalized from pixels - x_norm: {x_norm}, y_norm: {y_norm}")
                 else:
                     x_norm = row['x_left']
                     y_norm = row['y_left']
-                    print(f"DEBUG: Already normalized - x_norm: {x_norm}, y_norm: {y_norm}")
-                    
+                
                 # Check each ROI in this frame
                 for roi in rois_in_frame:
                     if 'label' not in roi or 'coordinates' not in roi:
-                        print(f"DEBUG: Missing label or coordinates in ROI: {roi.keys()}")
                         continue
-                        
+                    
                     label = roi['label']
                     coords = roi['coordinates']
                     
-                    print(f"DEBUG: Checking ROI '{label}' with {len(coords)} coordinate points")
-                    for i, coord in enumerate(coords):
-                        print(f"DEBUG: ROI vertex {i}: x={coord['x']}, y={coord['y']}")
-                    
-                    # Check if point is inside polygon
-                    is_inside = self._point_in_polygon(x_norm, y_norm, coords)
-                    print(f"DEBUG: Point ({x_norm}, {y_norm}) is {'inside' if is_inside else 'outside'} ROI '{label}'")
+                    # OPTIMIZATION: Use cached results for polygon checks
+                    cache_key = (tuple((coord['x'], coord['y']) for coord in coords), x_norm, y_norm)
+                    if cache_key in polygon_check_cache:
+                        is_inside = polygon_check_cache[cache_key]
+                    else:
+                        # Check if point is inside polygon
+                        is_inside = self._point_in_polygon(x_norm, y_norm, coords)
+                        polygon_check_cache[cache_key] = is_inside
                     
                     if is_inside:
                         # Add time spent to this ROI
@@ -1789,11 +1820,15 @@ class EyeMovementAnalysisGUI(QMainWindow):
                             roi_durations[label] = 0
                         roi_durations[label] += 1  # Each fixation counts as one time unit
                         hit_count += 1
-                        print(f"DEBUG: Hit count increased to {hit_count}, duration for '{label}' = {roi_durations[label]}")
                         break  # Only count one ROI per fixation
             
             print(f"DEBUG: Processed {processed_count} fixations, found {hit_count} ROI hits")
             print(f"DEBUG: ROI durations: {roi_durations}")
+            
+            # Update progress
+            status_label.setText("Creating plot...")
+            progress_bar.setValue(95)
+            QApplication.processEvents()
             
             # Create the plot
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -1818,9 +1853,6 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 labels = [item[0] for item in sorted_rois]
                 durations = [item[1] for item in sorted_rois]
                 
-                print(f"DEBUG: Plotting with labels: {labels}")
-                print(f"DEBUG: Plotting with durations: {durations}")
-                
                 # Plot bar chart
                 bars = ax.bar(labels, durations, color='skyblue')
                 
@@ -1844,7 +1876,6 @@ class EyeMovementAnalysisGUI(QMainWindow):
             plt.tight_layout()
             
             # Save the plot to the same directory as other plots
-            # First find the plots directory for this movie
             plots_dir = None
             
             # Check if the movie exists in visualization_results
@@ -1869,6 +1900,10 @@ class EyeMovementAnalysisGUI(QMainWindow):
             plot_path = os.path.join(plots_dir, plot_filename)
             
             # Save the figure
+            status_label.setText("Saving plot...")
+            progress_bar.setValue(98)
+            QApplication.processEvents()
+            
             plt.savefig(plot_path, dpi=100, bbox_inches='tight')
             plt.close(fig)
             
@@ -1890,6 +1925,10 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.movie_visualizations[movie][display_name] = plot_path
             
             # Update the visualization dropdown
+            status_label.setText("Updating UI...")
+            progress_bar.setValue(99)
+            QApplication.processEvents()
+            
             current_index = self.viz_type_combo.currentIndex()
             self.movie_selected(self.movie_combo.currentIndex())
             
@@ -1905,6 +1944,10 @@ class EyeMovementAnalysisGUI(QMainWindow):
             # Regenerate HTML report with the new plot if a report exists
             if hasattr(self, 'report_path') and self.report_path and os.path.exists(os.path.dirname(self.report_path)):
                 try:
+                    status_label.setText("Updating HTML report...")
+                    progress_bar.setValue(100)
+                    QApplication.processEvents()
+                    
                     # Get visualizer instance
                     from eyelink_visualizer import MovieEyeTrackingVisualizer
                     
@@ -1956,16 +1999,12 @@ class EyeMovementAnalysisGUI(QMainWindow):
             )
             
     def _point_in_polygon(self, x, y, coordinates):
-        """Check if a point is inside a polygon defined by coordinates"""
+        """Check if a point is inside a polygon defined by coordinates using an optimized ray casting algorithm"""
         # Extract points from coordinates
         points = [(coord['x'], coord['y']) for coord in coordinates]
         
-        print(f"DEBUG: Point-in-polygon check for point ({x}, {y}) against polygon with {len(points)} points")
-        print(f"DEBUG: Polygon vertices: {points}")
-        
         # Need at least 3 points to form a polygon
         if len(points) < 3:
-            print(f"DEBUG: Polygon has fewer than 3 points, returning False")
             return False
             
         # Ray casting algorithm
@@ -1976,24 +2015,21 @@ class EyeMovementAnalysisGUI(QMainWindow):
             xi, yi = points[i]
             xj, yj = points[j]
             
-            # Check if point is on an edge
+            # Check if point is on an edge or vertex (exact match)
             if (yi == y and xi == x) or (yj == y and xj == x):
-                print(f"DEBUG: Point is exactly on vertex ({xi}, {yi}) or ({xj}, {yj}), returning True")
                 return True
                 
             # Check if the point is on a horizontal edge
-            if (yi == yj) and (yi == y) and (min(xi, xj) <= x <= max(xi, xj)):
-                print(f"DEBUG: Point is on horizontal edge between ({xi}, {yi}) and ({xj}, {yj}), returning True")
+            if (abs(yi - yj) < 1e-9) and (abs(yi - y) < 1e-9) and (min(xi, xj) <= x <= max(xi, xj)):
                 return True
                 
-            # Ray casting
+            # Ray casting - check if ray crosses this edge
+            # Using a small epsilon for floating point comparison
             if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
                 inside = not inside
-                print(f"DEBUG: Ray crossed edge between ({xi}, {yi}) and ({xj}, {yj}), inside = {inside}")
                 
             j = i
             
-        print(f"DEBUG: Point-in-polygon result: {inside}")
         return inside
 
     def showEvent(self, event):
