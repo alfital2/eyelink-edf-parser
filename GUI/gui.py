@@ -12,7 +12,7 @@ matplotlib.use('Agg')  # Use non-interactive backend to avoid thread issues
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QGridLayout, QPushButton, QLabel, QFileDialog,
-                             QComboBox, QCheckBox, QTabWidget, QSplitter,
+                             QComboBox, QCheckBox, QTabWidget, QSplitter, QStackedWidget,
                              QProgressBar, QMessageBox, QTableWidget,
                              QTableWidgetItem, QHeaderView, QGroupBox,
                              QTextBrowser, QToolTip, QScrollArea, QSizePolicy)
@@ -216,44 +216,8 @@ class ProcessingThread(QThread):
             self.wait()
 
 
-class AnimatedROIScanpathTab(QWidget):
-    """Tab widget for animated scanpath visualization with ROI overlay."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.init_ui()
-        self.roi_file_path = None
-
-    def init_ui(self):
-        """Initialize the UI components."""
-        layout = QVBoxLayout(self)
-
-        # Create the animated ROI scanpath widget
-        self.scanpath_widget = AnimatedROIScanpathWidget()
-
-        # Add widget to layout
-        layout.addWidget(self.scanpath_widget)
-
-
-    def load_data(self, data, movie_name, screen_width=1280, screen_height=1024):
-        """Load data into the animated ROI scanpath widget."""
-        # Store data for future reference
-        self.data = data
-        self.movie_name = movie_name
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        
-        # Pass ROI file path to the widget ONLY if explicitly set by user
-        if hasattr(self, 'roi_file_path') and self.roi_file_path and os.path.exists(self.roi_file_path):
-            # Update the widget's ROI file label
-            self.scanpath_widget.roi_file_label.setText(f"ROI File: {os.path.basename(self.roi_file_path)}")
-            
-            # Load data with ROI path
-            return self.scanpath_widget.load_data(data, self.roi_file_path, movie_name, screen_width, screen_height)
-        else:
-            # If no ROI file is explicitly selected, load eye data without ROI
-            # Status label was removed to save space
-            return self.scanpath_widget.load_data(data, None, movie_name, screen_width, screen_height)
+# The AnimatedROIScanpathTab class has been removed since we've integrated this functionality
+# directly into the Results & Visualization tab
 
 
 class EyeMovementAnalysisGUI(QMainWindow):
@@ -269,6 +233,10 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.movie_visualizations = {}
         self.features_data = None
         self.selected_file_type = "ASC Files"  # Default file type
+        
+        # Screen dimensions for visualizations
+        self.screen_width = 1280
+        self.screen_height = 1024
 
         # Get feature and visualization explanations from the documentation module
         self.feature_explanations = get_feature_explanations()
@@ -558,38 +526,56 @@ class EyeMovementAnalysisGUI(QMainWindow):
         movie_section = QWidget()
         movie_layout = QHBoxLayout(movie_section)
 
-        movie_layout.addWidget(QLabel("Select Movie:"))
+        # Create selector label with fixed width
+        movie_label = QLabel("Select Movie:")
+        movie_label.setFixedWidth(100)
+        movie_layout.addWidget(movie_label)
+        
+        # Create movie combo with fixed width
         self.movie_combo = QComboBox()
         self.movie_combo.setEnabled(False)
+        self.movie_combo.setMinimumWidth(200)
         self.movie_combo.currentIndexChanged.connect(self.movie_selected)
-        movie_layout.addWidget(self.movie_combo, 1)
+        movie_layout.addWidget(self.movie_combo)
+        
+        # Add spacer for better alignment
+        movie_layout.addSpacing(20)
 
         # Visualization type selection
-        viz_type_layout = QHBoxLayout()
-        viz_type_layout.addWidget(QLabel("Visualization Type:"))
+        viz_type_label = QLabel("Visualization Type:")
+        viz_type_label.setFixedWidth(120)
+        movie_layout.addWidget(viz_type_label)
+        
         self.viz_type_combo = QComboBox()
         self.viz_type_combo.setEnabled(False)
+        self.viz_type_combo.setMinimumWidth(200)
         self.viz_type_combo.currentIndexChanged.connect(self.visualization_type_selected)
-        viz_type_layout.addWidget(self.viz_type_combo, 1)
-
-        movie_layout.addLayout(viz_type_layout)
+        movie_layout.addWidget(self.viz_type_combo)
+        
+        # Add spacer at the end
+        movie_layout.addStretch(1)
         viz_layout.addWidget(movie_section)
 
-        # Visualization area - Make it fill available space
+        # Create a stacked widget to switch between static image and animated visualization
+        self.viz_stack = QStackedWidget()
+        self.viz_stack.setMinimumSize(800, 500)
+        self.viz_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # Add static image label as first widget in stack
         self.image_label = QLabel("Visualization will be shown here")
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setMinimumSize(800, 500)
-        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.image_label.setStyleSheet("background-color: #f0f0f0; border: 1px solid #cccccc;")
-        viz_layout.addWidget(self.image_label)
+        self.viz_stack.addWidget(self.image_label)
+        
+        # Create and add animated scanpath widget as second widget in stack
+        self.animated_scanpath = AnimatedROIScanpathWidget()
+        self.viz_stack.addWidget(self.animated_scanpath)
+        
+        # Add the stacked widget to the layout
+        viz_layout.addWidget(self.viz_stack)
 
-        # Visualization explanation area
-        self.viz_explanation = QTextBrowser()
-        self.viz_explanation.setMaximumHeight(150)
-        if not self.is_dark_mode:
-            self.viz_explanation.setStyleSheet("background-color: #f8f8f8; border: 1px solid #e0e0e0;")
-        self.viz_explanation.setText("Select a visualization to see explanation")
-        viz_layout.addWidget(self.viz_explanation)
+        # Visualization explanation has been removed as requested
+        # Users can find descriptions in the documentation tab
 
         # Open report button
         self.report_btn = QPushButton("Open HTML Report")
@@ -625,8 +611,14 @@ class EyeMovementAnalysisGUI(QMainWindow):
         selector_layout = QHBoxLayout(selector_container)
         selector_layout.setContentsMargins(0, 0, 0, 0)
         
-        selector_layout.addWidget(QLabel("Select Movie:"))
+        # Create label with fixed width
+        movie_label = QLabel("Select Movie:")
+        movie_label.setFixedWidth(100)
+        selector_layout.addWidget(movie_label)
+        
+        # Create combo with fixed width
         self.feature_movie_combo = QComboBox()
+        self.feature_movie_combo.setMinimumWidth(200)
         self.feature_movie_combo.setToolTip("Select a movie to view its specific features, or 'All Data' to view aggregate features")
         self.feature_movie_combo.addItem("All Data")
         self.feature_movie_combo.setEnabled(False)
@@ -694,8 +686,6 @@ class EyeMovementAnalysisGUI(QMainWindow):
         # Add tabs to the main tab widget
         tabs.addTab(processing_tab, "Data Processing")
         tabs.addTab(results_tab, "Results & Visualization")
-        self.animated_viz_tab = AnimatedROIScanpathTab()
-        tabs.addTab(self.animated_viz_tab, "Animated Scanpath")
         tabs.addTab(features_tab, "Extracted Features")
         tabs.addTab(documentation_tab, "Documentation")
 
@@ -1183,8 +1173,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.status_log.append("--- END OF SUMMARY ---")
             self.status_log.setTextColor(Qt.black if not self.is_dark_mode else Qt.white)
                 
-            # Show summary in message box
-            QMessageBox.information(self, "Processing Complete", msg)
+            # Summary is already shown in the status log, no need for a popup message
 
         # Update the features display if features were extracted
         if "features" in results and not results["features"].empty:
@@ -1239,9 +1228,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 self.screen_width = 1280
                 self.screen_height = 1024
             
-            # Load data for animated tabs from all movies
-            for movie in self.visualization_results.keys():
-                self._load_animation_data_for_movie(movie)
+            # No need to preload animation data anymore - it will be loaded when requested
 
         # Enable the report button if a report was generated
         if 'report_path' in results and os.path.exists(results['report_path']):
@@ -1308,8 +1295,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.image_label.setText(f"No visualizations available for {movie}")
             return
             
-        # Update the animated visualization tabs to show the same movie
-        self._load_animation_data_for_movie(movie)
+        # No need to preload animation data anymore - it will be loaded when requested in show_visualization
 
         # Get all plot files available for this movie
         available_visualizations = {}
@@ -1343,7 +1329,13 @@ class EyeMovementAnalysisGUI(QMainWindow):
         # Add available visualizations to combo box
         if available_visualizations:
             self.movie_visualizations[movie] = available_visualizations
+            
+            # Add static visualizations
             self.viz_type_combo.addItems(sorted(available_visualizations.keys()))
+            
+            # Add animated scanpath visualization option
+            self.viz_type_combo.addItem("Animated Scanpath")
+            
             self.viz_type_combo.setEnabled(True)
 
             # Select the first visualization
@@ -1352,150 +1344,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.viz_type_combo.setEnabled(False)
             self.image_label.setText(f"No visualizations found for movie: {movie}")
 
-    def _load_animation_data_for_movie(self, movie):
-        """Load data for the given movie into both animation tabs"""
-        # Prevent reentrant calls that could cause duplicate processes
-        if hasattr(self, '_loading_animation_data') and self._loading_animation_data:
-            print("Animation data loading already in progress, skipping duplicate call")
-            return
-            
-        # Set a flag to prevent reentrant calls
-        self._loading_animation_data = True
-        
-        try:
-            # Find the data directory for this movie
-            data_dir = None
-            data_path = None
-
-            # First check if we have an output directory
-            if hasattr(self, 'output_dir') and self.output_dir:
-                # Look for data directory
-                data_dir = os.path.join(self.output_dir, 'data')
-                if os.path.exists(data_dir):
-                    # First, check for exact match with movie name
-                    for file in os.listdir(data_dir):
-                        if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
-                            data_path = os.path.join(data_dir, file)
-                            print(f"Found data file with exact match: {data_path}")
-                            break
-
-                    # If no exact match, check for any unified_eye_metrics file
-                    if not data_path:
-                        for file in os.listdir(data_dir):
-                            if 'unified_eye_metrics' in file and file.endswith('.csv'):
-                                data_path = os.path.join(data_dir, file)
-                                print(f"Found data file without exact match: {data_path}")
-                                # Extract real movie name from filename if possible
-                                parts = file.split('_unified_eye_metrics_')
-                                if len(parts) > 1 and '_' in parts[1]:
-                                    real_movie_name = parts[1].split('.')[0]  
-                                    print(f"Detected movie name from file: {real_movie_name}")
-                                break
-
-            # If we still don't have a data directory, try to extract it from visualization paths
-            if not data_dir or not data_path:
-                for paths in self.visualization_results[movie].values():
-                    if paths:  # If there's at least one path
-                        # Get directory containing the visualization
-                        viz_dir = os.path.dirname(paths[0])
-                        # The movie directory is usually the parent of the plots directory
-                        potential_data_dir = os.path.dirname(viz_dir)
-                        if os.path.exists(potential_data_dir):
-                            data_dir = potential_data_dir
-                            # First look for CSV files with exact movie name match
-                            for file in os.listdir(data_dir):
-                                if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
-                                    data_path = os.path.join(data_dir, file)
-                                    print(f"Found data file with exact match: {data_path}")
-                                    break
-                                    
-                            # If no exact match, try any unified_eye_metrics file
-                            if not data_path:
-                                for file in os.listdir(data_dir):
-                                    if 'unified_eye_metrics' in file and file.endswith('.csv'):
-                                        data_path = os.path.join(data_dir, file)
-                                        print(f"Found data file without exact match: {data_path}")
-                                        # Extract real movie name from filename if possible
-                                        parts = file.split('_unified_eye_metrics_')
-                                        if len(parts) > 1 and '_' in parts[1]:
-                                            real_movie_name = parts[1].split('.')[0]
-                                            print(f"Detected movie name from file: {real_movie_name}")
-                                        break
-                            
-                            # If we found a data file, stop searching
-                            if data_path:
-                                break
-
-            # Make sure we have the screen dimensions initialized
-            if not hasattr(self, 'screen_width') or not hasattr(self, 'screen_height'):
-                self.screen_width = 1280
-                self.screen_height = 1024
-
-            # Load the data if found
-            if data_path and os.path.exists(data_path):
-                print(f"Loading animation data from: {data_path}")
-                import pandas as pd  # Ensure pandas is imported here
-                data = pd.read_csv(data_path)
-
-                # Determine the actual movie name to use
-                display_movie_name = movie
-                
-                # Try to extract the real movie name from the file path if not found above
-                if not 'real_movie_name' in locals():
-                    parts = os.path.basename(data_path).split('_unified_eye_metrics_')
-                    if len(parts) > 1 and '.' in parts[1]:
-                        real_movie_name = parts[1].split('.')[0]
-                        display_movie_name = real_movie_name
-                        print(f"Extracted movie name from path: {display_movie_name}")
-                else:
-                    display_movie_name = real_movie_name
-                    print(f"Using previously detected movie name: {display_movie_name}")
-
-                # Check if necessary columns are present
-                required_cols = ['timestamp', 'x_left', 'y_left', 'x_right', 'y_right']
-                missing_cols = [col for col in required_cols if col not in data.columns]
-
-                if missing_cols:
-                    print(f"Animation data missing required columns: {missing_cols}")
-                    if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                        self.animated_viz_tab.scanpath_widget.status_label.setText(
-                            f"Error: Data missing columns: {', '.join(missing_cols)}")
-                elif data.empty:
-                    print("Animation data is empty")
-                    if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                        self.animated_viz_tab.scanpath_widget.status_label.setText("Error: Empty data file")
-                else:
-                    # Load data into the animated scanpath widget
-                    if hasattr(self, 'animated_viz_tab'):
-                        # If the widget isn't already a combined scanpath widget, 
-                        # import the module and confirm it's the correct import
-                        from animated_scanpath import AnimatedScanpathWidget
-                        
-                        # Load the data - this will populate both the normal scanpath
-                        # view and any ROI data if available - use the actual movie name from the file
-                        success = self.animated_viz_tab.load_data(data, display_movie_name, self.screen_width, self.screen_height)
-                        if success:
-                            print(f"Loaded {len(data)} samples for animated visualization of {display_movie_name}")
-            else:
-                print(f"No data file found for movie: {movie}")
-                print(f"Searched in directory: {data_dir}")
-                if data_dir:
-                    print(f"Files in directory: {os.listdir(data_dir)}")
-                
-                if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                    # Status label was removed to save space, silently handle the error
-                    pass
-
-        except Exception as e:
-            print(f"Error loading data for animated scanpath: {e}")
-            import traceback
-            traceback.print_exc()  # Print detailed error for debugging
-            if hasattr(self, 'animated_viz_tab') and hasattr(self.animated_viz_tab, 'scanpath_widget'):
-                # Status label was removed to save space, silently handle the error
-                pass
-        finally:
-            # Always clear the loading flag to prevent deadlocks
-            self._loading_animation_data = False
+    # This method has been removed since we now handle animated visualization directly in the show_visualization method
 
     def visualization_type_selected(self, index):
         """Show the selected visualization"""
@@ -1508,8 +1357,38 @@ class EyeMovementAnalysisGUI(QMainWindow):
         """Load and display the selected visualization"""
         movie = self.movie_combo.currentText()
         viz_type = self.viz_type_combo.currentText()
+        
+        # Special case for animated scanpath
+        if viz_type == "Animated Scanpath":
+            # Switch to the animated scanpath widget
+            self.viz_stack.setCurrentIndex(1)
+            
+            # Load the data for this movie into the animated scanpath widget
+            try:
+                # Find the data path for this movie - reusing _load_animation_data_for_movie logic
+                data = self._get_movie_data(movie)
+                if data is not None:
+                    # Extract real movie name from the data path if possible
+                    data_path = data["data_path"]
+                    parts = os.path.basename(data_path).split('_unified_eye_metrics_')
+                    if len(parts) > 1 and '.' in parts[1]:
+                        real_movie_name = parts[1].split('.')[0]
+                    else:
+                        real_movie_name = movie
+                    
+                    # Load the data into the animated scanpath widget
+                    self.animated_scanpath.load_data(data["data"], None, real_movie_name, 
+                                                     self.screen_width, self.screen_height)
+                else:
+                    self.image_label.setText(f"No data available for movie: {movie}")
+                    self.viz_stack.setCurrentIndex(0)
+            except Exception as e:
+                self.image_label.setText(f"Error loading animated scanpath: {str(e)}")
+                self.viz_stack.setCurrentIndex(0)
+            return
 
-        # Clear current display
+        # For all other visualization types, switch to the image label widget
+        self.viz_stack.setCurrentIndex(0)
         self.image_label.clear()
 
         if movie not in self.movie_visualizations or viz_type not in self.movie_visualizations[movie]:
@@ -1536,19 +1415,80 @@ class EyeMovementAnalysisGUI(QMainWindow):
                 )
                 self.image_label.setPixmap(scaled_pixmap)
                 self.image_label.setAlignment(Qt.AlignCenter)
-
-                # Update the explanation text for this visualization
-                viz_name = viz_type.lower().replace(' ', '_')
-                for key in self.visualization_explanations:
-                    if key in viz_name:
-                        self.viz_explanation.setHtml(self.visualization_explanations[key])
-                        break
-                else:
-                    self.viz_explanation.setText(f"No detailed explanation available for {viz_type}.")
             else:
                 self.image_label.setText(f"Failed to load image: {plot_path}")
         except Exception as e:
             self.image_label.setText(f"Error displaying image: {str(e)}")
+            
+    def _get_movie_data(self, movie):
+        """Helper method to get the data for a specific movie"""
+        data_dir = None
+        data_path = None
+
+        # First check if we have an output directory
+        if hasattr(self, 'output_dir') and self.output_dir:
+            # Look for data directory
+            data_dir = os.path.join(self.output_dir, 'data')
+            if os.path.exists(data_dir):
+                # First, check for exact match with movie name
+                for file in os.listdir(data_dir):
+                    if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
+                        data_path = os.path.join(data_dir, file)
+                        print(f"Found data file with exact match: {data_path}")
+                        break
+
+                # If no exact match, check for any unified_eye_metrics file
+                if not data_path:
+                    for file in os.listdir(data_dir):
+                        if 'unified_eye_metrics' in file and file.endswith('.csv'):
+                            data_path = os.path.join(data_dir, file)
+                            print(f"Found data file without exact match: {data_path}")
+                            break
+
+        # If we still don't have a data directory, try to extract it from visualization paths
+        if not data_dir or not data_path:
+            for paths in self.visualization_results[movie].values():
+                if paths:  # If there's at least one path
+                    # Get directory containing the visualization
+                    viz_dir = os.path.dirname(paths[0])
+                    # The movie directory is usually the parent of the plots directory
+                    potential_data_dir = os.path.dirname(viz_dir)
+                    if os.path.exists(potential_data_dir):
+                        data_dir = potential_data_dir
+                        # First look for CSV files with exact movie name match
+                        for file in os.listdir(data_dir):
+                            if 'unified_eye_metrics' in file and movie in file and file.endswith('.csv'):
+                                data_path = os.path.join(data_dir, file)
+                                print(f"Found data file with exact match: {data_path}")
+                                break
+                                
+                        # If no exact match, try any unified_eye_metrics file
+                        if not data_path:
+                            for file in os.listdir(data_dir):
+                                if 'unified_eye_metrics' in file and file.endswith('.csv'):
+                                    data_path = os.path.join(data_dir, file)
+                                    print(f"Found data file without exact match: {data_path}")
+                                    break
+                        
+                        # If we found a data file, stop searching
+                        if data_path:
+                            break
+
+        # Load the data if found
+        if data_path and os.path.exists(data_path):
+            import pandas as pd  # Ensure pandas is imported here
+            data = pd.read_csv(data_path)
+            
+            # Check if necessary columns are present
+            required_cols = ['timestamp', 'x_left', 'y_left', 'x_right', 'y_right']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+            
+            if missing_cols or data.empty:
+                return None
+            else:
+                return {"data": data, "data_path": data_path}
+        
+        return None
 
     def open_report(self):
         """Open the HTML report in the default web browser"""
@@ -1643,13 +1583,15 @@ def parse_args():
         
     return args
 
-
+# run the gui on test mode with this syntax : --test_mode
+#       --source_file
+#       /Users/talalfi/Desktop/tmp/1017735502_unified_eye_metrics_Dinstein_Girls_90_SecX.csv
+#       --destination_folder /Users/talalfi/Desktop/tmp/dst_files
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = EyeMovementAnalysisGUI()
     
-    window.screen_width = 1280
-    window.screen_height = 1024
+    # Screen dimensions are now set in __init__
     
     # Parse command line arguments
     args = parse_args()
