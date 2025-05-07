@@ -1,3 +1,10 @@
+"""
+Plot Generator Module
+
+Provides functionality for generating advanced visualization plots for eye tracking data,
+particularly focused on ROI (Region of Interest) analysis and social attention metrics.
+"""
+
 # Standard library imports
 import os
 import time
@@ -20,6 +27,9 @@ from scipy.ndimage import gaussian_filter1d
 
 # PyQt5 imports
 from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QProgressBar, QMessageBox
+
+# Local imports
+from .eyelink_visualizer import MovieEyeTrackingVisualizer
 
 
 class PlotGenerator:
@@ -1255,7 +1265,7 @@ class PlotGenerator:
             
         try:
             # Get visualizer instance
-            from eyelink_visualizer import MovieEyeTrackingVisualizer
+            from .eyelink_visualizer import MovieEyeTrackingVisualizer
             
             # Determine the base directory for the visualizer
             movie_data = self._get_movie_data(movie)

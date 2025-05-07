@@ -1,3 +1,12 @@
+"""
+Processing Thread Module
+
+Implements a QThread-based worker for processing eye tracking data files
+without freezing the GUI. Handles both ASC (EyeLink raw data) and CSV
+(pre-processed data) file formats, supports data extraction, feature calculation,
+and visualization generation.
+"""
+
 # Standard library imports
 import os
 import datetime
@@ -6,22 +15,34 @@ import traceback
 # PyQt5 imports
 from PyQt5.QtCore import QThread, pyqtSignal
 
-# Local application imports
-from parser import (
+# Local application imports - updated for new package structure
+from .parser import (
     process_asc_file, process_multiple_files, 
     load_csv_file, load_multiple_csv_files
 )
-from eyelink_visualizer import MovieEyeTrackingVisualizer
+from ..visualization.eyelink_visualizer import MovieEyeTrackingVisualizer
+
 
 class ProcessingThread(QThread):
     """Thread for running processing operations without freezing the GUI"""
     update_progress = pyqtSignal(int)
-    status_update = pyqtSignal(str)  # New signal for status updates
+    status_update = pyqtSignal(str)  # Signal for status updates
     processing_complete = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
 
     def __init__(self, file_paths, output_dir, visualize, extract_features, generate_report=False,
                  file_type="ASC Files"):
+        """
+        Initialize the processing thread
+        
+        Args:
+            file_paths: List of paths to files to process
+            output_dir: Directory to save output files
+            visualize: Whether to generate visualizations
+            extract_features: Whether to extract eye movement features
+            generate_report: Whether to generate an HTML report
+            file_type: Type of files to process ("ASC Files" or "CSV Files")
+        """
         super().__init__()
         self.file_paths = file_paths
         self.output_dir = output_dir
@@ -31,6 +52,7 @@ class ProcessingThread(QThread):
         self.file_type = file_type
 
     def run(self):
+        """Main processing method that runs in a separate thread"""
         try:
             # Create timestamped directory
             self.status_update.emit("Creating output directories...")
@@ -183,9 +205,9 @@ class ProcessingThread(QThread):
                 summary = {
                     'samples': len(parser.sample_data) if hasattr(parser, 'sample_data') else 0,
                     'fixations': sum(len(fixs) for fixs in parser.fixations.values()) if hasattr(parser,
-                                                                                                 'fixations') else 0,
+                                                                                               'fixations') else 0,
                     'saccades': sum(len(saccs) for saccs in parser.saccades.values()) if hasattr(parser,
-                                                                                                 'saccades') else 0,
+                                                                                               'saccades') else 0,
                     'blinks': sum(len(blinks) for blinks in parser.blinks.values()) if hasattr(parser, 'blinks') else 0,
                     'frames': len(parser.frame_markers) if hasattr(parser, 'frame_markers') else 0
                 }
@@ -196,7 +218,6 @@ class ProcessingThread(QThread):
             self.update_progress.emit(100)
 
         except Exception as e:
-            import traceback
             error_msg = f"Error: {str(e)}"
             self.status_update.emit(error_msg)
             self.error_occurred.emit(f"{error_msg}\n{traceback.format_exc()}")

@@ -1,7 +1,10 @@
+# Standard library imports
 import sys
 import os
+import datetime
+import webbrowser
 
-# Add parent directory to path so we can import modules from the parent directory
+# Add parent directory to path, so we can import modules from the parent directory
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
@@ -10,30 +13,44 @@ if parent_dir not in sys.path:
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend to avoid thread issues
 
-# Global variable for plot progress tracking
-current_plot_progress = "0/0"  # Will be updated during plot generation
+# Third-party imports
+import pandas as pd
 
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QGridLayout, QPushButton, QLabel, QFileDialog,
-                             QComboBox, QCheckBox, QTabWidget, QSplitter, QStackedWidget,
-                             QProgressBar, QMessageBox, QTableWidget,
-                             QTableWidgetItem, QHeaderView, QGroupBox,
-                             QTextBrowser, QToolTip, QScrollArea, QSizePolicy)
+# PyQt5 imports
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, 
+    # Layout widgets
+    QVBoxLayout, QHBoxLayout, QGridLayout, QSplitter, QStackedWidget, QScrollArea,
+    # Interactive widgets
+    QPushButton, QLabel, QFileDialog, QComboBox, QCheckBox, QProgressBar, QMessageBox, 
+    # Container widgets
+    QTabWidget, QGroupBox,
+    # Data display widgets
+    QTableWidget, QTableWidgetItem, QHeaderView, QTextBrowser, QToolTip,
+    # Size policy
+    QSizePolicy
+)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QFont, QCursor, QPalette
-import datetime
-import pandas as pd
-from parser import process_asc_file, process_multiple_files, load_csv_file, load_multiple_csv_files
+
+# Local application imports
+from parser import (
+    process_asc_file, process_multiple_files, 
+    load_csv_file, load_multiple_csv_files
+)
 from eyelink_visualizer import MovieEyeTrackingVisualizer
-# Import documentation module
-from documentation import (get_feature_explanations, get_visualization_explanations,
-                           get_formatted_feature_documentation, get_formatted_visualization_documentation)
+from documentation import (
+    get_feature_explanations, get_visualization_explanations,
+    get_formatted_feature_documentation, get_formatted_visualization_documentation
+)
 from animated_roi_scanpath import AnimatedROIScanpathWidget
 from theme_manager import ThemeManager
 from feature_table_manager import FeatureTableManager
 from plot_generator import PlotGenerator
+from processing_thread import ProcessingThread
 
-from processing_thread import *
+# Global variable for plot progress tracking
+current_plot_progress = "0/0"  # Will be updated during plot generation
 
 
 # The AnimatedROIScanpathTab class has been removed since we've integrated this functionality
