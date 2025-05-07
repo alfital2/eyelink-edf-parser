@@ -983,9 +983,44 @@ class EyeMovementAnalysisGUI(QMainWindow):
             if missing_cols or data.empty:
                 return None
             else:
-                return {"data": data, "data_path": data_path}
+                return {"data": data, "data_path": data_path, "data_dir": data_dir}
         
         return None
+        
+    def get_plots_directory(self, movie=None):
+        """
+        Get the correct plots directory for the given movie.
+        This ensures all visualizations are saved to the same location.
+        """
+        # First try to get movie data to locate the plots directory
+        if movie:
+            movie_data = self._get_movie_data(movie)
+            if movie_data and "data_dir" in movie_data:
+                data_dir = movie_data["data_dir"]
+                plots_dir = os.path.join(data_dir, 'plots')
+                if os.path.exists(plots_dir):
+                    return plots_dir
+                    
+        # If we have no movie data or can't find its plots directory,
+        # use the output directory structure
+        if hasattr(self, 'output_dir') and self.output_dir and os.path.exists(self.output_dir):
+            data_dir = os.path.join(self.output_dir, 'data')
+            if os.path.exists(data_dir):
+                plots_dir = os.path.join(data_dir, 'plots')
+                if not os.path.exists(plots_dir):
+                    os.makedirs(plots_dir, exist_ok=True)
+                return plots_dir
+            
+            # If no data directory, use the main plots directory
+            plots_dir = os.path.join(self.output_dir, 'plots')
+            if not os.path.exists(plots_dir):
+                os.makedirs(plots_dir, exist_ok=True)
+            return plots_dir
+            
+        # Fallback to a default location
+        default_plots_dir = os.path.join(os.path.dirname(__file__), 'plots')
+        os.makedirs(default_plots_dir, exist_ok=True)
+        return default_plots_dir
 
     def open_report(self):
         """Open the HTML report in the default web browser"""
@@ -1063,14 +1098,89 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.generate_social_btn.setEnabled(True)
     
     def generate_social_attention_plots(self):
-        """Delegate to the PlotGenerator class"""
+        """Delegate to the PlotGenerator class and handle UI updates"""
+        # Get the current movie
+        movie = self.movie_combo.currentText()
+        
+        # Get the correct plots directory
+        plots_dir = self.get_plots_directory(movie)
+        print(f"Using plots directory: {plots_dir}")
+        
         # Set necessary attributes on the plot generator
         self.plot_generator.roi_file_path = self.roi_file_path
         self.plot_generator.movie_combo = self.movie_combo
-        self.plot_generator._get_movie_data = self._get_movie_data
+        self.plot_generator._get_movie_data = self._get_movie_data  # Method injection
+        self.plot_generator.plots_dir = plots_dir
+        
+        # Pass report path and output directory information if available
+        if hasattr(self, 'report_path'):
+            self.plot_generator.report_path = self.report_path
+        if hasattr(self, 'output_dir'):
+            self.plot_generator.output_dir = self.output_dir
         
         # Call the generator
-        return self.plot_generator.generate_social_attention_plots()
+        result = self.plot_generator.generate_social_attention_plots()
+        
+        # Handle the result
+        if isinstance(result, dict) and result.get("success", False):
+            # Update the visualization dropdown to show the new plots
+            movie = result.get("movie", self.movie_combo.currentText())
+            
+            # Ensure plots are properly added to visualization_results
+            if movie not in self.visualization_results:
+                self.visualization_results[movie] = {'basic': [], 'social': []}
+                
+            # Add the newly generated plots to visualization_results
+            plots = result.get("plots", [])
+            for plot_path in plots:
+                if os.path.exists(plot_path):
+                    if plot_path not in self.visualization_results[movie].get('social', []):
+                        if 'social' not in self.visualization_results[movie]:
+                            self.visualization_results[movie]['social'] = []
+                        self.visualization_results[movie]['social'].append(plot_path)
+            
+            # Force a refresh of the visualization dropdown
+            # First reset the movie_visualizations entry to ensure it's reloaded from disk
+            if movie in self.movie_visualizations:
+                del self.movie_visualizations[movie]
+            
+            # Then reload the dropdown contents
+            self.movie_selected(self.movie_combo.currentIndex())
+            
+            # Show appropriate success message
+            if result.get("report_updated", False):
+                QMessageBox.information(
+                    self,
+                    "Plot Generated",
+                    f"Social attention plots for {movie} have been generated.\n\n"
+                    f"The plots have been added to the visualization dropdown and the HTML report has been updated."
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Plot Generated",
+                    f"Social attention plots for {movie} have been generated.\n\n"
+                    f"The plots have been added to the visualization dropdown."
+                )
+            
+            return True
+        elif isinstance(result, dict) and not result.get("success", False):
+            # Handle error case with details
+            error_msg = result.get("error", "Unknown error")
+            QMessageBox.critical(
+                self,
+                "Error Generating Plots",
+                f"Failed to generate social attention plots: {error_msg}"
+            )
+            return False
+        elif isinstance(result, bool):
+            # Handle simple boolean return for backward compatibility
+            if result:
+                # Update the visualization dropdown
+                self.movie_selected(self.movie_combo.currentIndex())
+                return True
+        
+        return False
 
 
     

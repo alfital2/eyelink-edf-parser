@@ -31,6 +31,9 @@ class PlotGenerator:
         self.screen_height = screen_height
         self.visualization_results = visualization_results
         self.movie_visualizations = movie_visualizations
+        self.report_path = None
+        self.output_dir = None
+        self.plots_dir = None  # This will be set by the GUI
 
     def create_advanced_roi_plots(self, movie, roi_durations, fixation_data, plots_dir,
                                   frame_keys, frame_range_map, polygon_check_cache, status_label, progress_bar,
@@ -55,6 +58,9 @@ class PlotGenerator:
         import seaborn as sns
         from matplotlib.ticker import MaxNLocator
         from collections import defaultdict
+        
+        # Initialize list to track created plots
+        created_plots = []
 
         if not roi_durations:
             print("WARNING: No ROI hits found, cannot generate advanced plots")
@@ -392,6 +398,10 @@ class PlotGenerator:
             # Add to visualization results
             self.visualization_results[movie]['social'].append(matrix_path)
             self.movie_visualizations[movie]["ROI Transition Matrix"] = matrix_path
+            
+            # Add to list of created plots
+            if 'created_plots' in locals():
+                created_plots.append(matrix_path)
 
         # 3. ROI First Fixation Latency Plot
         if update_progress_func:
@@ -442,6 +452,10 @@ class PlotGenerator:
                 # Add to visualization results
                 self.visualization_results[movie]['social'].append(latency_path)
                 self.movie_visualizations[movie]["ROI First Fixation Latency"] = latency_path
+                
+                # Add to list of created plots
+                if 'created_plots' in locals():
+                    created_plots.append(latency_path)
 
         # ROI Dwell Time Comparison - Removed as it's now merged with ROI Attention Time plot
         # Skip this step in the overall progress
@@ -581,6 +595,10 @@ class PlotGenerator:
                     # Add to movie_visualizations with display name
                     self.movie_visualizations[movie]["ROI Fixation Duration Distribution"] = duration_path
                     print(f"DEBUG: Added ROI Fixation Duration Distribution plot to movie_visualizations")
+                    
+                    # Add to list of created plots
+                    if 'created_plots' in locals():
+                        created_plots.append(duration_path)
             except Exception as e:
                 print(f"ERROR creating ROI Fixation Duration Distribution plot: {e}")
                 import traceback
@@ -594,6 +612,9 @@ class PlotGenerator:
             status_label.setText("Generating ROI Temporal Heatmap...")
             progress_bar.setValue(0)  # Reset for new task
             QApplication.processEvents()
+            
+        # Track the number of plots generated in this method
+        print(f"DEBUG: Total plots created in advanced ROI plots: {len(created_plots)}")
 
         print(f"DEBUG: Creating ROI Temporal Heatmap with {num_bins} time bins")
 
@@ -694,10 +715,17 @@ class PlotGenerator:
                     # Add to movie_visualizations with display name
                     self.movie_visualizations[movie]["ROI Temporal Heatmap"] = temporal_path
                     print(f"DEBUG: Added ROI Temporal Heatmap to movie_visualizations")
+                    
+                    # Add to list of created plots
+                    if 'created_plots' in locals():
+                        created_plots.append(temporal_path)
             except Exception as e:
                 print(f"ERROR creating ROI Temporal Heatmap: {e}")
                 import traceback
                 traceback.print_exc()
+                
+        # Return the list of created plots
+        return created_plots
 
     def generate_social_attention_plots(self):
         """Generate social attention plots based on loaded ROI file"""
@@ -1052,14 +1080,32 @@ class PlotGenerator:
 
             # Save the plot
             import os
-            os.makedirs(f"{os.path.dirname(self.roi_file_path)}/plots", exist_ok=True)
-            plots_dir = f"{os.path.dirname(self.roi_file_path)}/plots"
+            
+            # Use the plots directory provided by the GUI
+            plots_dir = self.plots_dir
+            
+            # If no plots directory was set, create a default one
+            if not plots_dir:
+                if self.output_dir and os.path.exists(self.output_dir):
+                    plots_dir = os.path.join(self.output_dir, 'plots')
+                else:
+                    # Fallback to using the ROI file location
+                    plots_dir = f"{os.path.dirname(self.roi_file_path)}/plots"
+                
+            os.makedirs(plots_dir, exist_ok=True)
+            print(f"DEBUG: Using plots directory: {plots_dir}")
+            
+            # Initialize list to track created plot files
+            created_plots = []
 
             attention_filename = f"roi_attention_time_{movie.replace(' ', '_')}.png"
             attention_path = os.path.join(plots_dir, attention_filename)
             print(f"DEBUG: Saving ROI Attention Time plot to: {attention_path}")
             plt.savefig(attention_path, dpi=100, bbox_inches='tight')
             plt.close(fig)
+            
+            # Add path to list of created plots
+            created_plots.append(attention_path)
 
             # Add to visualization results
             if movie not in self.visualization_results:
@@ -1077,7 +1123,7 @@ class PlotGenerator:
             # Call the advanced ROI plots function if we have ROI hits
             if roi_durations:
                 # Now use the created directory for all plot outputs
-                self.create_advanced_roi_plots(
+                advanced_plots = self.create_advanced_roi_plots(
                     movie,
                     roi_durations,
                     fixation_data,
@@ -1089,22 +1135,41 @@ class PlotGenerator:
                     progress_bar,
                     update_progress_func=update_overall_progress
                 )
+                
+                # Add advanced plots to our created_plots list
+                if advanced_plots:
+                    created_plots.extend(advanced_plots)
+                    print(f"DEBUG: Added {len(advanced_plots)} advanced plots to created_plots list")
 
             # Final update
             overall_progress_bar.setValue(100)
             overall_status_label.setText(f"Completed generating plots for {movie}")
             status_label.setText("All plots generated successfully")
             QApplication.processEvents()
-
+            
+            # Update HTML report if available
+            report_updated = False
+            if self.report_path:
+                overall_status_label.setText(f"Updating HTML report...")
+                status_label.setText("Adding new visualizations to report...")
+                QApplication.processEvents()
+                report_updated = self.update_html_report(movie)
+            
             # Wait a bit before closing the dialog
             import time
             time.sleep(1)
 
             # Close the dialog
             progress_dialog.close()
-
-            # Return success
-            return True
+            
+            # Return results with information about report update and created plots
+            result = {
+                "success": True,
+                "report_updated": report_updated,
+                "movie": movie,
+                "plots": created_plots
+            }
+            return result
 
         except Exception as e:
             import traceback
@@ -1122,8 +1187,13 @@ class PlotGenerator:
                 f"An error occurred while generating plots: {str(e)}"
             )
 
-            # Return failure
-            return False
+            # Return failure with details
+            return {
+                "success": False,
+                "error": str(e),
+                "movie": movie,
+                "plots": []
+            }
 
     def _point_in_polygon(self, x, y, coordinates):
         """Check if a point is inside a polygon defined by coordinates using an optimized ray casting algorithm"""
@@ -1159,12 +1229,144 @@ class PlotGenerator:
 
         return inside
 
-    # This method will need to be implemented if used in generate_social_attention_plots
+    def update_html_report(self, movie):
+        """
+        Update the HTML report to include newly generated plots.
+        
+        Args:
+            movie: The movie name for which plots were generated
+            
+        Returns:
+            bool: True if the report was updated successfully, False otherwise
+        """
+        if not self.report_path or not os.path.exists(self.report_path):
+            print("DEBUG: No report path available for update")
+            return False
+            
+        try:
+            # Get visualizer instance
+            from eyelink_visualizer import MovieEyeTrackingVisualizer
+            
+            # Determine the base directory for the visualizer
+            movie_data = self._get_movie_data(movie)
+            if movie_data and "data_path" in movie_data:
+                base_dir = os.path.dirname(os.path.dirname(movie_data["data_path"]))
+            else:
+                # Fallback to output directory
+                base_dir = self.output_dir
+            
+            print(f"DEBUG: Using base directory for report regeneration: {base_dir}")
+            
+            # First, scan the report directory to find existing images that might not be in visualization_results
+            report_dir = os.path.dirname(self.report_path)
+            
+            # Try to find the plots directory - first use the one passed to the plot generator
+            plots_dir = None
+            if hasattr(self, 'plots_dir') and self.plots_dir and os.path.exists(self.plots_dir):
+                plots_dir = self.plots_dir
+                print(f"DEBUG: Using plots directory from plot generator: {plots_dir}")
+            # Then try to find it relative to the report directory
+            elif os.path.exists(os.path.join(os.path.dirname(report_dir), 'plots')):
+                plots_dir = os.path.join(os.path.dirname(report_dir), 'plots')
+            elif os.path.exists(os.path.join(os.path.dirname(os.path.dirname(report_dir)), 'plots')):
+                plots_dir = os.path.join(os.path.dirname(os.path.dirname(report_dir)), 'plots')
+            elif os.path.exists(os.path.join(report_dir, 'plots')):
+                plots_dir = os.path.join(report_dir, 'plots')
+                
+            print(f"DEBUG: Looking for plots in: {plots_dir if plots_dir else 'No plots directory found'}")
+            
+            # Create a comprehensive visualization results dictionary including all plots
+            all_visualizations = {}
+            
+            # Start with our existing visualization results
+            # Make sure we at least have the current movie in the visualization results
+            if movie not in self.visualization_results:
+                self.visualization_results[movie] = {'social': [], 'basic': []}
+                
+            for m, categories in self.visualization_results.items():
+                if m not in all_visualizations:
+                    all_visualizations[m] = {}
+                for category, plots in categories.items():
+                    if category not in all_visualizations[m]:
+                        all_visualizations[m][category] = []
+                    all_visualizations[m][category].extend(plots)
+            
+            # If we found a plots directory, scan it for any additional plots
+            if plots_dir and os.path.exists(plots_dir):
+                for plot_file in os.listdir(plots_dir):
+                    if plot_file.endswith('.png'):
+                        # Try to determine which movie this plot belongs to
+                        plot_path = os.path.join(plots_dir, plot_file)
+                        
+                        # Check if this plot is already in our visualization results
+                        already_included = False
+                        for m, categories in all_visualizations.items():
+                            for category, plots in categories.items():
+                                if plot_path in plots:
+                                    already_included = True
+                                    break
+                            if already_included:
+                                break
+                        
+                        # If this plot is not already included, add it to the appropriate movie
+                        if not already_included:
+                            movie_found = False
+                            # Try to extract movie name from the plot filename
+                            for m in all_visualizations.keys():
+                                if m.lower().replace(' ', '_') in plot_file.lower():
+                                    # This plot belongs to this movie
+                                    if 'all' not in all_visualizations[m]:
+                                        all_visualizations[m]['all'] = []
+                                    all_visualizations[m]['all'].append(plot_path)
+                                    print(f"DEBUG: Added previously untracked plot to report: {plot_file} (matched to {m})")
+                                    movie_found = True
+                                    break
+                            
+                            # If we couldn't find a movie match, add it to the current movie
+                            if not movie_found:
+                                if 'all' not in all_visualizations[movie]:
+                                    all_visualizations[movie]['all'] = []
+                                all_visualizations[movie]['all'].append(plot_path)
+                                print(f"DEBUG: Added plot without specific movie match to current movie: {plot_file}")
+            
+            # Create the visualizer with appropriate screen size
+            visualizer = MovieEyeTrackingVisualizer(base_dir=base_dir, 
+                                                  screen_size=(self.screen_width, self.screen_height))
+            
+            # Generate a new report with all visualizations
+            print(f"DEBUG: Regenerating report with comprehensive visualization set")
+            visualizer.generate_report(all_visualizations, report_dir)
+            print(f"DEBUG: Regenerated HTML report to include all plots")
+            
+            # Print out total number of plots included in the report
+            total_plots = 0
+            for m, categories in all_visualizations.items():
+                for category, plots in categories.items():
+                    total_plots += len(plots)
+            print(f"DEBUG: Report contains {total_plots} total plots")
+            
+            return True
+            
+        except Exception as e:
+            print(f"ERROR updating HTML report: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def _get_movie_data(self, movie):
         """
-        Placeholder method to retrieve movie data.
+        Retrieve movie data. 
         
-        This method needs to be called from the GUI class, so we'll need to update
-        the implementation in gui.py to pass movie_data to the PlotGenerator.
+        This method is a placeholder that will be overridden by the GUI's _get_movie_data
+        method when generate_social_attention_plots is called.
+        
+        Args:
+            movie: Name of the movie to get data for
+            
+        Returns:
+            Dict containing movie data or None if not found
         """
-        pass
+        # This is a placeholder - the actual implementation will be provided by the GUI
+        # through method injection in generate_social_attention_plots
+        print("WARNING: _get_movie_data was called but not properly injected by GUI")
+        return None
