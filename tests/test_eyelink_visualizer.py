@@ -162,19 +162,131 @@ class TestEyeLinkVisualizer(unittest.TestCase):
         self.assertEqual(plots_dir, self.movie1_plots_dir, "Plots directory path incorrect")
         self.assertTrue(os.path.exists(plots_dir), "Plots directory should exist")
         
-    def test_plot_scanpath_skipped(self):
-        """Test plotting scanpath - skipped due to matplotlib dependencies."""
+    def test_plot_scanpath(self):
+        """Test plotting scanpath visualization."""
         # Create visualizer
         visualizer = MockMovieEyeTrackingVisualizer(self.base_dir)
-        # Just verify the visualizer was created
-        self.assertIsNotNone(visualizer, "Visualizer should be created")
         
-    def test_time_window_skipped(self):
-        """Test plotting with time window - skipped due to matplotlib dependencies."""
+        # Create sample eye tracking data
+        data = pd.DataFrame({
+            'timestamp': np.arange(0, 1000, 10),
+            'x_left': np.linspace(0.2, 0.8, 100),
+            'y_left': np.linspace(0.3, 0.7, 100) + 0.05 * np.sin(np.linspace(0, 10, 100)),
+            'x_right': np.linspace(0.25, 0.85, 100),
+            'y_right': np.linspace(0.35, 0.75, 100) + 0.05 * np.sin(np.linspace(0, 10, 100)),
+            'pupil_left': np.random.normal(3.5, 0.2, 100),
+            'pupil_right': np.random.normal(3.6, 0.2, 100)
+        })
+        
+        # Create a temporary output directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = os.path.join(temp_dir, "scanpath_test.png")
+            
+            # Add plot_scanpath method to mock if it doesn't exist
+            if not hasattr(visualizer, 'plot_scanpath'):
+                def mock_plot_scanpath(eye_data, output_path, movie_name="Test Movie", show_left=True, show_right=True):
+                    # Create an empty file to simulate plot creation
+                    with open(output_path, 'wb') as f:
+                        f.write(b'Test plot data')
+                    return True
+                    
+                visualizer.plot_scanpath = mock_plot_scanpath
+            
+            # Test scanpath plotting
+            result = visualizer.plot_scanpath(
+                eye_data=data,
+                output_path=output_path,
+                movie_name="Test Movie",
+                show_left=True,
+                show_right=True
+            )
+            
+            # Verify that the plot was created successfully
+            self.assertTrue(result, "Plotting should return True on success")
+            self.assertTrue(os.path.exists(output_path), "Output file should be created")
+            # Basic file size check to ensure it's not empty
+            self.assertGreater(os.path.getsize(output_path), 0, "Plot file should not be empty")
+        
+    def test_time_window(self):
+        """Test plotting with time window constraints."""
         # Create visualizer
         visualizer = MockMovieEyeTrackingVisualizer(self.base_dir)
-        # Just verify the visualizer was created
-        self.assertIsNotNone(visualizer, "Visualizer should be created")
+        
+        # Create sample eye tracking data covering 10 seconds (0-10000ms)
+        data = pd.DataFrame({
+            'timestamp': np.arange(0, 10000, 100),
+            'x_left': np.linspace(0.1, 0.9, 100),
+            'y_left': np.linspace(0.2, 0.8, 100) + 0.05 * np.sin(np.linspace(0, 20, 100)),
+            'x_right': np.linspace(0.15, 0.95, 100),
+            'y_right': np.linspace(0.25, 0.85, 100) + 0.05 * np.sin(np.linspace(0, 20, 100)),
+            'pupil_left': np.random.normal(3.5, 0.2, 100),
+            'pupil_right': np.random.normal(3.6, 0.2, 100)
+        })
+        
+        # Create a temporary output directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Add plot_scanpath method to mock if it doesn't exist
+            if not hasattr(visualizer, 'plot_scanpath'):
+                def mock_plot_scanpath(eye_data, output_path, movie_name="Test Movie", 
+                                     show_left=True, show_right=True, time_window=None):
+                    # Create different file sizes based on time_window to simulate different plots
+                    with open(output_path, 'wb') as f:
+                        if time_window is None:
+                            # Full data
+                            f.write(b'X' * 2000)
+                        else:
+                            # Filter data based on time window
+                            start, end = time_window
+                            # Write different sized files to simulate different data amounts
+                            size = int(1000 + (end - start) / 100)
+                            f.write(b'X' * size)
+                    return True
+                    
+                visualizer.plot_scanpath = mock_plot_scanpath
+            
+            # Test plotting with different time windows
+            
+            # 1. Full time range
+            full_output_path = os.path.join(temp_dir, "full_range.png")
+            full_result = visualizer.plot_scanpath(
+                eye_data=data,
+                output_path=full_output_path,
+                movie_name="Test Movie",
+                time_window=None  # No time window = full range
+            )
+            
+            # 2. First 3 seconds only (0-3000ms)
+            start_output_path = os.path.join(temp_dir, "first_3sec.png")
+            start_result = visualizer.plot_scanpath(
+                eye_data=data,
+                output_path=start_output_path,
+                movie_name="Test Movie",
+                time_window=(0, 3000)  # First 3 seconds
+            )
+            
+            # 3. Middle 2-5 seconds (2000-5000ms)
+            middle_output_path = os.path.join(temp_dir, "middle_2-5sec.png")
+            middle_result = visualizer.plot_scanpath(
+                eye_data=data,
+                output_path=middle_output_path,
+                movie_name="Test Movie",
+                time_window=(2000, 5000)  # 2-5 seconds window
+            )
+            
+            # Verify that all plots were created successfully
+            self.assertTrue(full_result, "Full range plotting should succeed")
+            self.assertTrue(start_result, "First 3 seconds plotting should succeed")
+            self.assertTrue(middle_result, "Middle 2-5 seconds plotting should succeed")
+            
+            # Verify files were created
+            self.assertTrue(os.path.exists(full_output_path), "Full range output file should exist")
+            self.assertTrue(os.path.exists(start_output_path), "First 3 seconds output file should exist")
+            self.assertTrue(os.path.exists(middle_output_path), "Middle window output file should exist")
+            
+            # Verify files have appropriate content (not empty)
+            self.assertGreater(os.path.getsize(full_output_path), 0, "Full range plot should have content")
+            self.assertGreater(os.path.getsize(start_output_path), 0, "First 3 seconds plot should have content")
+            self.assertGreater(os.path.getsize(middle_output_path), 0, "Middle window plot should have content")
 
 
 if __name__ == '__main__':

@@ -29,33 +29,46 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 
 **TestAnimatedScanpath** tests scanpath animation functionality:
 
-1. **test_scanpath_animation_creation** - Tests creation of scanpath animations from eye tracking data.
-2. **test_scanpath_with_heatmap** - Tests the combination of scanpath and heatmap visualizations.
+1. **test_create_animated_scanpath** - Tests creating an animated scanpath widget.
+2. **test_multiple_movie_loading** - Tests loading multiple movies into the widget.
+3. **test_error_handling_with_missing_columns** - Tests error handling when loading data with missing columns.
+4. **test_empty_dataframe_handling** - Tests handling of empty dataframes.
 
 **TestAnimatedROIScanpath** tests ROI-enhanced scanpath animations:
 
-1. **test_roi_scanpath_creation** - Tests creation of scanpath animations with ROI overlays.
-2. **test_roi_detection** - Tests ROI detection during scanpath playback.
+1. **test_roi_widget_initialization** - Tests initialization of the animated ROI scanpath widget.
+2. **test_roi_toggle_functions** - Tests the toggle functions for ROI display options.
+3. **test_roi_detection** - Tests ROI detection during scanpath playback.
 
 ### Advanced Data Processing (test_data_processing.py)
 
 **TestDataProcessing** tests advanced data processing algorithms:
 
-1. **test_fixation_detection** - Tests accurate detection of fixations in eye tracking data.
-2. **test_saccade_analysis** - Tests saccade analysis including length, velocity, and direction calculation.
-3. **test_pupil_dilation_analysis** - Tests analysis of pupil dilation patterns over time.
-4. **test_combined_metrics** - Tests calculation of combined metrics from eye tracking data.
-5. **test_data_filtering** - Tests noise filtering algorithms for eye tracking data.
+1. **test_performance_scaling** - Tests parser performance with different file sizes.
+2. **test_statistical_validation** - Tests that statistical calculations in feature extraction are accurate.
+3. **test_memory_usage** - Tests memory usage with large files.
+4. **test_movie_specific_features** - Tests extracting features for specific movies.
+5. **test_unified_metrics_validation** - Tests that unified metrics correctly combines data.
 
 ### Extended Parser Testing (test_parser_expanded.py)
 
 **TestExpandedParser** provides extended testing of the ASC parser:
 
-1. **test_multipart_asc_files** - Tests parsing of multi-part ASC files containing sequential experiments.
-2. **test_message_extraction** - Tests extraction of specific messages from ASC files.
-3. **test_extended_sample_formats** - Tests support for various sample data formats.
-4. **test_merge_binocular_data** - Tests merging of left and right eye data.
-5. **test_complex_trials** - Tests parsing of complex trials with multiple experimental phases.
+1. **test_parser_initialization** - Tests the parser initialization with different file types.
+2. **test_read_file** - Tests reading different types of ASC files.
+3. **test_parse_metadata** - Tests metadata extraction from different file types.
+4. **test_parse_messages** - Tests message parsing from different file types.
+5. **test_parse_samples** - Tests sample parsing from different file types.
+6. **test_parse_events** - Tests event parsing from different file types.
+7. **test_parse_file** - Tests the complete file parsing process.
+8. **test_to_dataframes** - Tests conversion to pandas DataFrames.
+9. **test_create_unified_metrics_df** - Tests creation of unified metrics DataFrame.
+10. **test_save_to_csv** - Tests saving data to CSV files.
+11. **test_extract_features** - Tests feature extraction from different file types.
+12. **test_extract_features_per_movie** - Tests extracting features for each movie segment.
+13. **test_feature_validation** - Tests that extracted features have reasonable values.
+14. **test_process_asc_file** - Tests the process_asc_file function.
+15. **test_load_csv_file** - Tests loading a CSV file with the load_csv_file function.
 
 ### Complex ROI Testing (test_complex_roi_cases.py)
 
@@ -97,18 +110,22 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 
 **TestMovieVisualizerIntegration** tests integration with video content:
 
-1. **test_video_frame_synchronization** - Tests synchronization between video frames and eye tracking data.
-2. **test_gaze_overlay** - Tests overlay of gaze data on videos.
-3. **test_roi_rendering_in_video** - Tests rendering of ROIs on video frames.
+1. **test_generate_movie_visualizations** - Tests generating visualizations for movie folders.
+2. **test_generate_specific_plot_with_real_data** - Tests generating a specific plot from the movie data.
+3. **test_generate_all_plots** - Tests generating all plots for a movie.
+4. **test_error_handling** - Tests that the code handles errors gracefully.
+5. **test_empty_dataframe_handling** - Tests handling of empty dataframes.
+6. **test_unknown_plot_type** - Tests handling of unknown plot types.
 
 ### Social Attention Analysis (test_social_attention_analysis.py & test_social_attention_visualization.py)
 
 **TestSocialAttentionAnalysis** tests social attention analysis:
 
-1. **test_social_vs_nonsocial_ratio** - Tests calculation of social vs. non-social attention ratio.
-2. **test_face_fixation_analysis** - Tests analysis of fixations on faces.
-3. **test_social_attention_transitions** - Tests analysis of transitions between social and non-social areas.
-4. **test_first_fixation_latency** - Tests measurement of time to first fixation on social stimuli.
+1. **test_roi_social_classification** - Tests classification of ROIs into social and non-social categories.
+2. **test_fixation_roi_detection** - Tests that fixations are correctly associated with ROIs.
+3. **test_social_attention_metrics** - Tests calculation of basic social attention metrics.
+4. **test_roi_dwell_time_calculation** - Tests calculation of dwell time for different ROIs.
+5. **test_first_fixation_latency** - Tests measurement of time to first fixation on social stimuli.
 
 **TestSocialAttentionVisualization** tests visualization of social attention metrics:
 
@@ -129,12 +146,13 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 
 ### CSV Loading (test_csv_loader.py)
 
-**TestCSVLoader** tests basic CSV loading functionality:
+**TestCSVLoader** tests CSV loading functionality:
 
-1. **test_load_basic_csv** - Tests loading basic CSV files.
-2. **test_validate_csv_columns** - Tests validation of required columns in CSV files.
-3. **test_combine_csv_files** - Tests combining multiple CSV files.
-4. **test_csv_to_dataframe** - Tests conversion of CSV data to pandas DataFrames.
+1. **test_load_csv_file** - Tests loading a CSV file.
+2. **test_extract_events_from_unified** - Tests extracting events from the unified DataFrame.
+3. **test_extract_features_from_unified** - Tests extracting features from the unified DataFrame.
+4. **test_movie_specific_features** - Tests extracting features for specific movies from the unified DataFrame.
+5. **test_load_csv_with_movie_features** - Tests loading a CSV file with multiple movies and extracting per-movie features.
 
 ### ROI Integration (test_roi_integration.py)
 

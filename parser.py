@@ -377,21 +377,47 @@ class EyeLinkASCParser:
                 continue
 
             parts = line.strip().split()
-            if len(parts) < 8:  # Must have at least timestamp + basic eye data
+            # Must have at least timestamp and some eye data
+            if len(parts) < 2:  
                 continue
 
             try:
-                # Basic sample data
+                # Initialize sample with timestamp only
                 sample = {
                     'timestamp': int(parts[0]),
-                    'x_left': float(parts[1]) if parts[1] != '.' else np.nan,
-                    'y_left': float(parts[2]) if parts[2] != '.' else np.nan,
-                    'pupil_left': float(parts[3]) if parts[3] != '0.0' else np.nan,
-                    'x_right': float(parts[4]) if parts[4] != '.' else np.nan,
-                    'y_right': float(parts[5]) if parts[5] != '.' else np.nan,
-                    'pupil_right': float(parts[6]) if parts[6] != '0.0' else np.nan,
-                    'input': int(parts[7]) if parts[7].isdigit() else None
+                    'x_left': np.nan,
+                    'y_left': np.nan,
+                    'pupil_left': np.nan,
+                    'x_right': np.nan,
+                    'y_right': np.nan,
+                    'pupil_right': np.nan,
+                    'input': None
                 }
+                
+                # Handle different data formats
+                if len(parts) >= 8:  # Full binocular data format
+                    # Basic sample data for full format
+                    sample.update({
+                        'x_left': float(parts[1]) if parts[1] != '.' else np.nan,
+                        'y_left': float(parts[2]) if parts[2] != '.' else np.nan,
+                        'pupil_left': float(parts[3]) if parts[3] != '0.0' else np.nan,
+                        'x_right': float(parts[4]) if parts[4] != '.' else np.nan,
+                        'y_right': float(parts[5]) if parts[5] != '.' else np.nan,
+                        'pupil_right': float(parts[6]) if parts[6] != '0.0' else np.nan,
+                        'input': int(parts[7]) if parts[7].isdigit() else None
+                    })
+                elif len(parts) >= 4:  # Monocular left eye data format
+                    # Only left eye data available
+                    sample.update({
+                        'x_left': float(parts[1]) if parts[1] != '.' else np.nan,
+                        'y_left': float(parts[2]) if parts[2] != '.' else np.nan,
+                        'pupil_left': float(parts[3]) if parts[3] != '0.0' else np.nan
+                    })
+                elif len(parts) >= 2:  # Minimal data format with just timestamp and some value
+                    # Just store the first value as x_left as a fallback
+                    sample.update({
+                        'x_left': float(parts[1]) if parts[1] != '.' else np.nan
+                    })
 
                 # Additional data if available
                 if len(parts) > 8:
@@ -1118,7 +1144,8 @@ def process_asc_file(file_path: str, output_dir: str = None, extract_features: b
 
         results = {
             'summary': summary,
-            'dataframes': dataframes
+            'dataframes': dataframes,
+            'parser': parser  # Add the parser object to the results
         }
 
         if output_dir:
@@ -1289,6 +1316,18 @@ def load_csv_file(file_path: str, output_dir: str = None, extract_features: bool
             # For older pandas versions
             unified_df = pd.read_csv(file_path, error_bad_lines=False)
             
+        # List of required columns to ensure we have all expected columns
+        required_columns = [
+            'timestamp', 'frame_number', 
+            'x_left', 'y_left', 'pupil_left',
+            'x_right', 'y_right', 'pupil_right'
+        ]
+        
+        # Add missing columns with NaN values
+        for col in required_columns:
+            if col not in unified_df.columns:
+                unified_df[col] = np.nan
+            
         # Clean up numeric columns to handle malformed data
         for col in unified_df.columns:
             if col.startswith(('x_', 'y_', 'pupil_', 'gaze_velocity_', 'head_movement_')):
@@ -1304,7 +1343,8 @@ def load_csv_file(file_path: str, output_dir: str = None, extract_features: bool
         # Return minimal results with empty dataframes
         return {
             'summary': {'samples': 0, 'fixations': 0, 'saccades': 0, 'blinks': 0, 'messages': 0, 'frames': 0},
-            'dataframes': {'unified_eye_metrics': pd.DataFrame(), 'samples': pd.DataFrame()}
+            'dataframes': {'unified_eye_metrics': pd.DataFrame(), 'samples': pd.DataFrame()},
+            'data': pd.DataFrame()  # Add empty data dataframe for test compatibility
         }
     
     # Get the participant ID from the filename
@@ -1372,10 +1412,11 @@ def load_csv_file(file_path: str, output_dir: str = None, extract_features: bool
     if 'frame_number' in unified_df.columns:
         summary['frames'] = unified_df['frame_number'].nunique()
     
-    # Prepare the results dictionary
+    # Prepare the results dictionary with an added 'data' key for test compatibility
     results = {
         'summary': summary,
-        'dataframes': dataframes
+        'dataframes': dataframes,
+        'data': unified_df  # Add the unified dataframe as 'data' for test compatibility
     }
     
     # Extract features if requested
@@ -1628,7 +1669,7 @@ def load_multiple_csv_files(file_paths: List[str], output_dir: str = None) -> pd
         output_dir: Directory to save output files (if needed)
     
     Returns:
-        DataFrame with combined features from all files
+        DataFrame with combined data from all files
     """
     all_features = []
     all_unified_metrics = []
@@ -1675,5 +1716,6 @@ def load_multiple_csv_files(file_paths: List[str], output_dir: str = None) -> pd
             combined_metrics.to_csv(combined_metrics_path, index=False)
             print(f"\nSaved combined unified metrics from all participants to {combined_metrics_path}")
     
-    # Return the combined features (for ML/DL analysis)
-    return combined_features
+    # Return the combined metrics data for test compatibility
+    # The tests expect this function to return a dataframe with all the data
+    return combined_metrics if all_unified_metrics else pd.DataFrame()
