@@ -8,7 +8,9 @@ import os
 import sys
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+import json
+import matplotlib.pyplot as plt
+from typing import Dict, List, Optional, Tuple, Any
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QCheckBox,
                              QPushButton, QFileDialog, QMessageBox, QLabel)
 from PyQt5.QtCore import Qt
@@ -48,426 +50,552 @@ def enhance_animated_scanpath_tab(animated_tab):
                 for i in range(layout.count()):
                     item = layout.itemAt(i)
                     if item and item.widget() and isinstance(item.widget(), QCheckBox):
-                        # Found the display options section
                         options_layout = layout
                         break
                 if options_layout:
                     break
-            break
+            if options_layout:
+                break
 
-    # If we couldn't find the options layout, create one
-    if not options_layout:
-        print("Warning: Could not find existing display options layout, creating a new one")
-        settings_group = animated_tab.findChild(QGroupBox)
-        if settings_group:
-            layout = settings_group.layout()
-            if isinstance(layout, QHBoxLayout):
-                # Create a new options section
-                options_widget = QWidget()
-                options_layout = QVBoxLayout(options_widget)
-                layout.addWidget(options_widget)
-
+    # Add ROI selection button
     if options_layout:
-        # Add ROI display checkbox
-        animated_tab.show_roi_cb = QCheckBox("Show ROIs")
-        animated_tab.show_roi_cb.setChecked(False)
-        animated_tab.show_roi_cb.toggled.connect(lambda checked: toggle_roi_display(animated_tab, checked))
-        options_layout.addWidget(animated_tab.show_roi_cb)
-
-        # Add ROI labels checkbox
-        animated_tab.show_roi_labels_cb = QCheckBox("Show ROI Labels")
-        animated_tab.show_roi_labels_cb.setChecked(True)
-        animated_tab.show_roi_labels_cb.toggled.connect(lambda checked: toggle_roi_labels(animated_tab, checked))
-        options_layout.addWidget(animated_tab.show_roi_labels_cb)
-
-        # Add highlight active ROI checkbox
-        animated_tab.highlight_roi_cb = QCheckBox("Highlight Active ROI")
-        animated_tab.highlight_roi_cb.setChecked(True)
-        animated_tab.highlight_roi_cb.toggled.connect(lambda checked: toggle_roi_highlight(animated_tab, checked))
-        options_layout.addWidget(animated_tab.highlight_roi_cb)
-
-    # Create ROI file selection button and container
-    roi_container = QWidget()
-    roi_layout = QHBoxLayout(roi_container)
-
-    roi_load_btn = QPushButton("Load ROI File")
-    roi_load_btn.clicked.connect(lambda: select_roi_file(animated_tab))
-    roi_layout.addWidget(roi_load_btn)
-
-    # Add ROI status label
-    animated_tab.roi_status_label = QLabel("No ROI file loaded")
-    animated_tab.roi_status_label.setStyleSheet("text-align: left; padding: 5px;")
-    roi_layout.addWidget(animated_tab.roi_status_label, 1)
-
-    # Add roi_container to the parent layout
-    parent_layout = animated_tab.layout()
-    if parent_layout:
-        # Add after settings group if found
-        settings_group = animated_tab.findChild(QGroupBox)
-        if settings_group:
-            index = parent_layout.indexOf(settings_group)
-            if index >= 0:
-                parent_layout.insertWidget(index + 1, roi_container)
-            else:
-                parent_layout.addWidget(roi_container)
-        else:
-            parent_layout.addWidget(roi_container)
-
-    # Add current ROI indicator
-    animated_tab.current_roi_label = QLabel("Current ROI: None")
-    if parent_layout:
-        parent_layout.addWidget(animated_tab.current_roi_label)
-
-    # Add ROI statistics label
-    animated_tab.roi_stats_label = QLabel("ROI Dwell Times: Not available")
-    if parent_layout:
-        parent_layout.addWidget(animated_tab.roi_stats_label)
-
-    # Patch the load_data method to accept ROI data
-    original_load_data = animated_tab.load_data
-
-    def enhanced_load_data(data, movie_name, screen_width=1280, screen_height=1024):
-        """Enhanced load_data method that supports ROI visualization."""
-        result = original_load_data(data, movie_name, screen_width, screen_height)
-
-        if result and hasattr(animated_tab.scanpath_widget,
-                              'roi_manager') and animated_tab.scanpath_widget.roi_manager.roi_data:
-            # ROI data is already loaded, update the display
-            animated_tab.scanpath_widget.redraw()
-            return True
-
-        return result
-
-    # Replace the method
-    animated_tab.load_data = enhanced_load_data
-
-    # Patch the update_display method of the scanpath widget
-    original_update_display = animated_tab.scanpath_widget.update_display
-
-    def enhanced_update_display():
-        """Enhanced update_display method that properly handles ROI visualization."""
-        if not hasattr(animated_tab.scanpath_widget, 'data') or animated_tab.scanpath_widget.data is None:
-            return
-
-        # Clear previous ROI patches and text annotations
-        for artist in animated_tab.scanpath_widget.ax.patches:
-            artist.remove()
-
-        # Clear text annotations (important to prevent labels from persisting)
-        for text in animated_tab.scanpath_widget.ax.texts:
-            text.remove()
-
-        # Get current frame number for ROI detection
-        current_frame_num = None
-        if hasattr(animated_tab.scanpath_widget, 'current_frame'):
-            frame_idx = animated_tab.scanpath_widget.current_frame
-            if frame_idx < len(
-                    animated_tab.scanpath_widget.data) and 'frame_number' in animated_tab.scanpath_widget.data.columns:
-                frame_value = animated_tab.scanpath_widget.data.iloc[frame_idx]['frame_number']
-                if not pd.isna(frame_value):
-                    current_frame_num = int(frame_value)
-
-        # Draw ROIs if enabled, frame number is available, and roi_manager has data
-        if (animated_tab.scanpath_widget.show_rois and
-                current_frame_num is not None and
-                hasattr(animated_tab.scanpath_widget, 'roi_manager') and
-                animated_tab.scanpath_widget.roi_manager is not None and
-                animated_tab.scanpath_widget.roi_manager.roi_data):  # Ensure roi_data exists
-
-            # Check for eye position to find active ROI
-            active_roi = None
-            if hasattr(animated_tab.scanpath_widget, 'data') and animated_tab.scanpath_widget.current_frame < len(
-                    animated_tab.scanpath_widget.data):
-                data_row = animated_tab.scanpath_widget.data.iloc[animated_tab.scanpath_widget.current_frame]
-
-                # Try to detect active ROI with normalized coordinates
-                # Check data for both eyes depending on display settings - using correct attributes
-                eye_cols = []
-
-                # Check if show_left_cb exists and is checked - FIXED ATTRIBUTE NAME
-                if hasattr(animated_tab.scanpath_widget,
-                           'show_left_cb') and animated_tab.scanpath_widget.show_left_cb.isChecked():
-                    if 'x_left' in data_row and 'y_left' in data_row:
-                        # Normalize coordinates if needed
-                        if 'x_left_norm' in data_row and 'y_left_norm' in data_row:
-                            eye_cols.append(('x_left_norm', 'y_left_norm'))
-                        else:
-                            x_norm = data_row['x_left'] / animated_tab.scanpath_widget.screen_width
-                            y_norm = data_row['y_left'] / animated_tab.scanpath_widget.screen_height
-                            eye_cols.append((x_norm, y_norm))
-
-                # Check if show_right_cb exists and is checked - FIXED ATTRIBUTE NAME
-                if hasattr(animated_tab.scanpath_widget,
-                           'show_right_cb') and animated_tab.scanpath_widget.show_right_cb.isChecked():
-                    if 'x_right' in data_row and 'y_right' in data_row:
-                        # Normalize coordinates if needed
-                        if 'x_right_norm' in data_row and 'y_right_norm' in data_row:
-                            eye_cols.append(('x_right_norm', 'y_right_norm'))
-                        else:
-                            x_norm = data_row['x_right'] / animated_tab.scanpath_widget.screen_width
-                            y_norm = data_row['y_right'] / animated_tab.scanpath_widget.screen_height
-                            eye_cols.append((x_norm, y_norm))
-
-                # Try each eye until we find a hit
-                for x_col, y_col in eye_cols:
-                    # Handle both attribute access and dictionary-like access
-                    try:
-                        if isinstance(x_col, str):
-                            x_val = data_row[x_col] if x_col in data_row else None
-                        else:
-                            x_val = x_col
-
-                        if isinstance(y_col, str):
-                            y_val = data_row[y_col] if y_col in data_row else None
-                        else:
-                            y_val = y_col
-
-                        if x_val is not None and y_val is not None and not pd.isna(x_val) and not pd.isna(y_val):
-                            roi = animated_tab.scanpath_widget.roi_manager.find_roi_at_gaze(
-                                current_frame_num, x_val, y_val)
-                            if roi is not None:
-                                active_roi = roi
-                                break
-                    except Exception as e:
-                        print(f"Error checking eye position: {str(e)}")
-
-            # Update active ROI tracking
-            active_roi_id = None
-            if active_roi and 'object_id' in active_roi:
-                active_roi_id = active_roi['object_id']
-                roi_label = active_roi.get('label', f"Unknown ({active_roi_id})")
-                animated_tab.current_roi_label.setText(f"Current ROI: {roi_label}")
-            else:
-                animated_tab.current_roi_label.setText("Current ROI: None")
-
-            animated_tab.scanpath_widget.active_roi_id = active_roi_id
-
-            # Draw ROIs with potential highlighting
-            try:
-                animated_tab.scanpath_widget.roi_manager.draw_rois_on_axis(
-                    animated_tab.scanpath_widget.ax,
-                    current_frame_num,
-                    show_labels=animated_tab.scanpath_widget.show_roi_labels,
-                    highlighted_roi=active_roi_id if animated_tab.scanpath_widget.highlight_active_roi else None
-                )
-            except Exception as e:
-                print(f"Error drawing ROIs: {str(e)}")
-
-        # Call the original method to handle the rest of the display update
-        try:
-            original_update_display()
-        except Exception as e:
-            print(f"Error updating display: {str(e)}")
-
-    # Replace the method with our enhanced version
-    animated_tab.scanpath_widget.update_display = enhanced_update_display
+        roi_button = QPushButton("Select ROI File")
+        roi_button.clicked.connect(animated_tab.select_roi_file)
+        options_layout.addWidget(roi_button)
+        
+        # Add status label for ROI file
+        animated_tab.roi_status_label = QLabel("No ROI file loaded")
+        options_layout.addWidget(animated_tab.roi_status_label)
+        
+        # Add ROI display controls
+        show_rois_cb = QCheckBox("Show ROIs")
+        show_rois_cb.setChecked(False)
+        show_rois_cb.toggled.connect(animated_tab.toggle_roi_display)
+        options_layout.addWidget(show_rois_cb)
+        
+        show_labels_cb = QCheckBox("Show ROI Labels")
+        show_labels_cb.setChecked(True)
+        show_labels_cb.toggled.connect(animated_tab.toggle_roi_labels)
+        options_layout.addWidget(show_labels_cb)
+        
+        highlight_cb = QCheckBox("Highlight Active ROI")
+        highlight_cb.setChecked(True)
+        highlight_cb.toggled.connect(animated_tab.toggle_highlight_roi)
+        options_layout.addWidget(highlight_cb)
+        
+        # Store references to the checkboxes
+        animated_tab.show_rois_cb = show_rois_cb
+        animated_tab.show_labels_cb = show_labels_cb
+        animated_tab.highlight_cb = highlight_cb
 
 
-def toggle_roi_display(animated_tab, checked):
-    """Toggle ROI display on/off."""
-    if hasattr(animated_tab.scanpath_widget, 'show_rois'):
-        animated_tab.scanpath_widget.show_rois = checked
-        animated_tab.scanpath_widget.redraw()
-
-
-def toggle_roi_labels(animated_tab, checked):
-    """Toggle ROI labels on/off."""
-    if hasattr(animated_tab.scanpath_widget, 'show_roi_labels'):
-        animated_tab.scanpath_widget.show_roi_labels = checked
-        animated_tab.scanpath_widget.redraw()
-
-
-def toggle_roi_highlight(animated_tab, checked):
-    """Toggle ROI highlight on/off."""
-    if hasattr(animated_tab.scanpath_widget, 'highlight_active_roi'):
-        animated_tab.scanpath_widget.highlight_active_roi = checked
-        animated_tab.scanpath_widget.redraw()
-
-
-def select_roi_file(animated_tab):
-    """Open file dialog to select an ROI JSON file."""
-    file_path, _ = QFileDialog.getOpenFileName(
-        animated_tab, "Select ROI File", "", "JSON Files (*.json)"
-    )
-
-    if file_path and os.path.exists(file_path):
-        success = animated_tab.scanpath_widget.roi_manager.load_roi_file(file_path)
-        if success:
-            animated_tab.roi_status_label.setText(f"ROI File: {os.path.basename(file_path)}")
-            # Enable the ROI display checkbox since we have data
-            animated_tab.show_roi_cb.setEnabled(True)
-            animated_tab.show_roi_cb.setChecked(True)  # Turn on ROI display
-            animated_tab.scanpath_widget.show_rois = True
-            # Redraw the visualization
-            animated_tab.scanpath_widget.redraw()
-        else:
-            QMessageBox.warning(
-                animated_tab,
-                "ROI File Error",
-                f"Failed to load ROI data from {file_path}. Please check file format."
-            )
-            animated_tab.roi_status_label.setText("Failed to load ROI file")
-
-
-def integrate_roi_visualization(main_gui):
+def load_sample_data(eye_data_path, roi_file_path):
     """
-    Integrate ROI visualization into the main GUI's existing Animated Scanpath tab.
-
-    Args:
-        main_gui: The main GUI instance
-    """
-    # Find the animated scanpath tab
-    animated_tab = None
-
-    # First try to get it directly if it's stored as an attribute
-    if hasattr(main_gui, 'animated_viz_tab'):
-        animated_tab = main_gui.animated_viz_tab
-    else:
-        # Otherwise search for it by name in the tab widget
-        tab_widget = None
-        for child in main_gui.centralWidget().findChildren(QTabWidget):
-            tab_widget = child
-            break
-
-        if tab_widget:
-            # Look for a tab with "Scanpath" or "Animated" in the title
-            for i in range(tab_widget.count()):
-                tab_title = tab_widget.tabText(i).lower()
-                if "scanpath" in tab_title or "animated" in tab_title:
-                    animated_tab = tab_widget.widget(i)
-                    break
-
-    if animated_tab:
-        # Enhance the tab with ROI visualization
-        enhance_animated_scanpath_tab(animated_tab)
-        print("Successfully integrated ROI visualization into Animated Scanpath tab")
-    else:
-        print("Warning: Could not find Animated Scanpath tab to enhance")
-        QMessageBox.warning(
-            main_gui,
-            "Integration Error",
-            "Could not find Animated Scanpath tab to enhance with ROI visualization."
-        )
-
-# Helper functions for testing
-def load_sample_data(eye_data_path, roi_data_path):
-    """
-    Load sample eye tracking data and ROI data for testing purposes.
+    Load sample eye tracking and ROI data for visualization.
     
     Args:
-        eye_data_path: Path to eye tracking CSV file
-        roi_data_path: Path to ROI JSON file
+        eye_data_path: Path to CSV file with eye tracking data
+        roi_file_path: Path to JSON file with ROI data
         
     Returns:
-        Tuple of (eye_data, roi_manager)
+        Tuple of (eye_data_df, roi_manager)
     """
-    import pandas as pd
+    # Initialize ROI manager
+    roi_manager = ROIManager()
     
     # Load eye tracking data
     try:
         eye_data = pd.read_csv(eye_data_path)
-        print(f"Loaded eye tracking data with {len(eye_data)} samples")
     except Exception as e:
-        print(f"Error loading eye tracking data: {str(e)}")
-        eye_data = pd.DataFrame()
+        print(f"Error loading eye data: {str(e)}")
+        return pd.DataFrame(), roi_manager
     
     # Load ROI data
-    roi_manager = ROIManager()
-    if os.path.exists(roi_data_path):
-        success = roi_manager.load_roi_file(roi_data_path)
-        if success:
-            print(f"Loaded ROI data with {len(roi_manager.frame_numbers)} frames")
-        else:
-            print(f"Failed to load ROI data from {roi_data_path}")
-    else:
-        print(f"ROI data file not found: {roi_data_path}")
+    if roi_file_path and os.path.exists(roi_file_path):
+        success = roi_manager.load_roi_file(roi_file_path)
+        if not success:
+            print(f"Failed to load ROI data from {roi_file_path}")
     
     return eye_data, roi_manager
 
-def create_integrated_visualization(eye_data, roi_manager, frame_number=1, save_path=None):
+
+def create_integrated_visualization(eye_data, roi_manager, frame_number, save_path=None):
     """
-    Create a visualization that integrates eye tracking data with ROI overlays.
+    Create an integrated visualization showing eye positions and ROIs.
     
     Args:
         eye_data: DataFrame with eye tracking data
         roi_manager: ROIManager instance with loaded ROI data
         frame_number: Frame number to visualize
-        save_path: Path to save the visualization
+        save_path: Optional path to save the visualization
         
     Returns:
         Matplotlib figure
     """
-    import matplotlib.pyplot as plt
-    
     # Create figure
     fig, ax = plt.subplots(figsize=(10, 8))
     
-    # Set axis limits for normalized coordinates
+    # Set up normalized coordinates (0-1)
     ax.set_xlim(0, 1)
     ax.set_ylim(1, 0)  # Invert y-axis to match screen coordinates
     
-    # Find eye positions for this frame if available
-    frame_data = eye_data[eye_data['frame_number'] == frame_number] if 'frame_number' in eye_data.columns else None
-    
-    if frame_data is not None and not frame_data.empty:
-        # Plot eye positions
-        for eye, color in [('left', 'blue'), ('right', 'orange')]:
-            x_col, y_col = f'x_{eye}', f'y_{eye}'
-            
-            if x_col in frame_data.columns and y_col in frame_data.columns:
-                # Normalize if needed
-                if frame_data[x_col].max() > 1.0 or frame_data[y_col].max() > 1.0:
-                    screen_width, screen_height = 1280, 1024  # Default screen dimensions
-                    x_norm = frame_data[x_col] / screen_width
-                    y_norm = frame_data[y_col] / screen_height
-                else:
-                    x_norm, y_norm = frame_data[x_col], frame_data[y_col]
-                
-                # Plot eye positions
-                ax.scatter(x_norm, y_norm, c=color, label=f'{eye.title()} Eye', alpha=0.8, s=50)
-    
-    # Draw ROIs
+    # Draw ROIs for this frame
     roi_manager.draw_rois_on_axis(ax, frame_number)
     
+    # Filter eye data for this frame
+    frame_data = eye_data[eye_data['frame_number'] == frame_number]
+    
+    # Plot left and right eye positions
+    if 'x_left_norm' in frame_data.columns and 'y_left_norm' in frame_data.columns:
+        ax.scatter(frame_data['x_left_norm'], frame_data['y_left_norm'], 
+                  color='blue', label='Left Eye', s=50, alpha=0.7)
+    elif 'x_left' in frame_data.columns and 'y_left' in frame_data.columns:
+        # If normalized coordinates not available, use raw coordinates
+        # Assuming screen dimensions of 1280x1024 for normalization
+        ax.scatter(frame_data['x_left'] / 1280, frame_data['y_left'] / 1024, 
+                  color='blue', label='Left Eye', s=50, alpha=0.7)
+        
+    if 'x_right_norm' in frame_data.columns and 'y_right_norm' in frame_data.columns:
+        ax.scatter(frame_data['x_right_norm'], frame_data['y_right_norm'], 
+                  color='red', label='Right Eye', s=50, alpha=0.7)
+    elif 'x_right' in frame_data.columns and 'y_right' in frame_data.columns:
+        # If normalized coordinates not available, use raw coordinates
+        ax.scatter(frame_data['x_right'] / 1280, frame_data['y_right'] / 1024, 
+                  color='red', label='Right Eye', s=50, alpha=0.7)
+    
     # Add title and labels
-    ax.set_title(f"Integrated Eye Tracking and ROI Visualization - Frame {frame_number}", fontsize=14)
+    ax.set_title(f"Eye Positions and ROIs for Frame {frame_number}", fontsize=14)
     ax.set_xlabel("X Position (normalized)", fontsize=12)
     ax.set_ylabel("Y Position (normalized)", fontsize=12)
-    
-    # Add grid and legend
-    ax.grid(True, linestyle='--', alpha=0.7)
     ax.legend()
+    
+    # Add grid
+    ax.grid(True, linestyle='--', alpha=0.5)
     
     # Save if requested
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Saved visualization to {save_path}")
+        plt.savefig(save_path, dpi=120, bbox_inches='tight')
     
     return fig
 
-# Test the integration
-if __name__ == "__main__":
-    # Paths to sample data
-    # eye_data_path = "eye_tracking_data.csv"  # Replace with actual path to eye data
-    eye_data_path = ("results/20250430_121428/data/Children-play-finalXNewer/1017735502_unified_eye_metrics_Children"
-                     "-play-finalXNewer.csv")
-    roi_data_path = "roi_data.json"  # Current ROI file
 
-    # Load data
-    eye_data, roi_manager = load_sample_data(eye_data_path, roi_data_path)
+def is_social_roi(roi_label):
+    """
+    Determine if a ROI is social based on its label.
+    
+    Args:
+        roi_label: The label of the ROI
+        
+    Returns:
+        Boolean indicating if the ROI is considered social
+    """
+    social_labels = [
+        "face", "eyes", "mouth", "nose", "ear", "ears", "hair", 
+        "hand", "hands", "arm", "arms", "finger", "fingers",
+        "torso", "body", "person", "people", "human", "head",
+        "shoulder", "shoulders", "leg", "legs", "foot", "feet"
+    ]
+    
+    if not roi_label:
+        return False
+        
+    return any(social_label in roi_label.lower() for social_label in social_labels)
 
-    # Try to find a frame with data
-    if 'frame_number' in eye_data.columns:
-        frame_counts = eye_data['frame_number'].value_counts().sort_values(ascending=False)
-        if len(frame_counts) > 0:
-            # Get the frame with most data points
-            best_frame = frame_counts.index[0]
-            print(f"\nSelected frame {best_frame} with {frame_counts[best_frame]} data points for visualization")
+def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager, 
+                          min_duration_ms: int = 100) -> Dict[str, Any]:
+    """
+    Analyze fixations within defined ROIs from eye tracking data.
+    
+    Args:
+        eye_data: DataFrame with eye tracking samples 
+        roi_manager: Instance of ROIManager with loaded ROI data
+        min_duration_ms: Minimum duration (in ms) for a stable gaze to be considered a fixation
+        
+    Returns:
+        Dictionary with fixation data including ROI information
+    """
+    # Initialize results
+    fixations = []
+    
+    # Ensure we have necessary columns
+    required_cols = ['timestamp', 'x_left', 'y_left', 'frame_number']
+    for col in required_cols:
+        if col not in eye_data.columns:
+            print(f"Missing required column: {col} in eye_data columns: {eye_data.columns}")
+            return {"error": f"Missing required column: {col}", "fixation_count": 0, "fixations": []}
+            
+    # Sort data by timestamp
+    sorted_data = eye_data.sort_values('timestamp')
+    
+    # Prepare for fixation detection
+    current_fixation = None
+    fixation_samples = []
+    fixation_count = 0
+    
+    # Debug information
+    print(f"Analyzing eye data with {len(sorted_data)} samples")
+    print(f"First few rows of data:")
+    print(sorted_data.head())
+    print(f"Data columns: {sorted_data.columns}")
+    
+    # Simple velocity-based fixation detection
+    for i in range(1, len(sorted_data)):
+        prev_row = sorted_data.iloc[i-1]
+        curr_row = sorted_data.iloc[i]
+        
+        # Calculate displacement between consecutive samples
+        dx = curr_row['x_left'] - prev_row['x_left']
+        dy = curr_row['y_left'] - prev_row['y_left']
+        displacement = np.sqrt(dx**2 + dy**2)
+        
+        # Time difference between samples
+        dt = curr_row['timestamp'] - prev_row['timestamp']
+        
+        # Simple threshold-based fixation detection (using normalized coordinates)
+        # Use a slightly larger threshold to ensure we're detecting fixations
+        if displacement < 0.05:  # Consider it part of a fixation if displacement is small (increased from 0.03)
+            if current_fixation is None:
+                # Start a new fixation
+                current_fixation = {
+                    'start_time': prev_row['timestamp'],
+                    'end_time': curr_row['timestamp'],
+                    'start_index': i-1,
+                    'samples': [prev_row, curr_row],
+                    'x_sum': prev_row['x_left'] + curr_row['x_left'],
+                    'y_sum': prev_row['y_left'] + curr_row['y_left'],
+                    'count': 2
+                }
+            else:
+                # Continue current fixation
+                current_fixation['end_time'] = curr_row['timestamp']
+                current_fixation['samples'].append(curr_row)
+                current_fixation['x_sum'] += curr_row['x_left']
+                current_fixation['y_sum'] += curr_row['y_left']
+                current_fixation['count'] += 1
+        else:
+            # End of fixation, save if it meets minimum duration
+            if current_fixation is not None:
+                current_fixation['duration'] = current_fixation['end_time'] - current_fixation['start_time']
+                
+                if current_fixation['duration'] >= min_duration_ms:
+                    # Calculate centroid
+                    x_mean = current_fixation['x_sum'] / current_fixation['count']
+                    y_mean = current_fixation['y_sum'] / current_fixation['count']
+                    
+                    # Get middle frame for this fixation
+                    frame_indices = [sample['frame_number'] for sample in current_fixation['samples'] 
+                                    if 'frame_number' in sample and not pd.isna(sample['frame_number'])]
+                    
+                    if frame_indices:
+                        frame_number = int(np.median(frame_indices))
+                        
+                        # Find which ROI this fixation belongs to
+                        roi = roi_manager.find_roi_at_gaze(frame_number, x_mean, y_mean)
+                        
+                        # Create fixation record
+                        roi_label = roi['label'] if roi and 'label' in roi else None
+                        fixation_record = {
+                            'start_time': current_fixation['start_time'],
+                            'end_time': current_fixation['end_time'],
+                            'duration': current_fixation['duration'],
+                            'x': x_mean,
+                            'y': y_mean,
+                            'frame': frame_number,
+                            'roi': roi_label,
+                            'social': roi.get('social', is_social_roi(roi_label)) if roi else False
+                        }
+                        
+                        fixations.append(fixation_record)
+                        fixation_count += 1
+                
+                # Reset for next fixation
+                current_fixation = None
+    
+    # Add one more fixation if we ended in the middle of one
+    if current_fixation is not None:
+        current_fixation['duration'] = current_fixation['end_time'] - current_fixation['start_time']
+        
+        if current_fixation['duration'] >= min_duration_ms:
+            # Calculate centroid
+            x_mean = current_fixation['x_sum'] / current_fixation['count']
+            y_mean = current_fixation['y_sum'] / current_fixation['count']
+            
+            # Get middle frame for this fixation
+            frame_indices = [sample['frame_number'] for sample in current_fixation['samples'] 
+                            if 'frame_number' in sample and not pd.isna(sample['frame_number'])]
+            
+            if frame_indices:
+                frame_number = int(np.median(frame_indices))
+                
+                # Find which ROI this fixation belongs to
+                roi = roi_manager.find_roi_at_gaze(frame_number, x_mean, y_mean)
+                
+                # Create fixation record
+                roi_label = roi['label'] if roi and 'label' in roi else None
+                fixation_record = {
+                    'start_time': current_fixation['start_time'],
+                    'end_time': current_fixation['end_time'],
+                    'duration': current_fixation['duration'],
+                    'x': x_mean,
+                    'y': y_mean,
+                    'frame': frame_number,
+                    'roi': roi_label,
+                    'social': roi.get('social', is_social_roi(roi_label)) if roi else False
+                }
+                
+                fixations.append(fixation_record)
+                fixation_count += 1
+    
+    # Return fixation data
+    return {
+        "fixation_count": fixation_count,
+        "fixations": fixations
+    }
 
-            # Create integrated visualization with the frame that has the most data
-            create_integrated_visualization(eye_data, roi_manager, frame_number=best_frame,
-                                            save_path="integrated_visualization_best_frame.png")
 
-    # Also try frame 1 for comparison
-    create_integrated_visualization(eye_data, roi_manager, frame_number=1,
-                                    save_path="integrated_visualization_frame1.png")
+def compute_social_attention_metrics(fixation_data: Dict[str, Any], 
+                                     eye_data: pd.DataFrame) -> Dict[str, float]:
+    """
+    Compute social attention metrics from fixation data.
+    
+    Args:
+        fixation_data: Dictionary with fixation information
+        eye_data: DataFrame with eye tracking samples
+        
+    Returns:
+        Dictionary with social attention metrics
+    """
+    fixations = fixation_data.get('fixations', [])
+    
+    if not fixations:
+        # Return all expected metrics with zero/default values
+        return {
+            "error": "No fixation data available",
+            "social_attention_ratio": 0.0,
+            "social_fixation_count": 0,
+            "non_social_fixation_count": 0,
+            "social_dwell_time": 0,
+            "non_social_dwell_time": 0,
+            "social_time_percent": 0.0,
+            "social_first_fixation_latency": None,
+            "time_to_first_social_fixation": None,
+            "first_fixations_by_roi": {},
+            "percent_fixations_social": 0.0
+        }
+    
+    # Count fixations
+    social_fixations = [f for f in fixations if f.get('social', False)]
+    non_social_fixations = [f for f in fixations if not f.get('social', False)]
+    
+    social_count = len(social_fixations)
+    non_social_count = len(non_social_fixations)
+    total_count = social_count + non_social_count
+    
+    # Calculate ratio
+    social_ratio = social_count / total_count if total_count > 0 else 0.0
+    
+    # Calculate dwell times
+    social_dwell_time = sum(f['duration'] for f in social_fixations)
+    non_social_dwell_time = sum(f['duration'] for f in non_social_fixations)
+    total_dwell_time = social_dwell_time + non_social_dwell_time
+    
+    # Calculate percentage of time spent on social vs. non-social
+    social_time_percent = (social_dwell_time / total_dwell_time * 100) if total_dwell_time > 0 else 0.0
+    
+    # Find first fixation in each ROI category
+    roi_first_fixations = {}
+    for f in sorted(fixations, key=lambda x: x['start_time']):
+        if f['roi'] and f['roi'] not in roi_first_fixations:
+            roi_first_fixations[f['roi']] = f['start_time']
+    
+    # Calculate first fixation latency for social ROIs
+    social_first_fixation = None
+    for f in sorted(social_fixations, key=lambda x: x['start_time']):
+        social_first_fixation = f['start_time']
+        break
+    
+    # Calculate time to first social fixation (relative to start of recording)
+    start_time = eye_data['timestamp'].min() if 'timestamp' in eye_data.columns else 0
+    time_to_first_social = (social_first_fixation - start_time) if social_first_fixation is not None else None
+    
+    # Return metrics
+    return {
+        "social_attention_ratio": social_ratio,
+        "social_fixation_count": social_count,
+        "non_social_fixation_count": non_social_count,
+        "social_dwell_time": social_dwell_time,
+        "non_social_dwell_time": non_social_dwell_time,
+        "social_time_percent": social_time_percent,
+        "social_first_fixation_latency": social_first_fixation,
+        "time_to_first_social_fixation": time_to_first_social,
+        "first_fixations_by_roi": roi_first_fixations,
+        "percent_fixations_social": social_count / total_count * 100 if total_count > 0 else 0.0
+    }
+
+
+def plot_roi_fixation_sequence(fixations: List[Dict], eye_data: pd.DataFrame,
+                              output_path: str = None, title: str = "ROI Fixation Sequence",
+                              ax: plt.Axes = None) -> plt.Figure:
+    """
+    Generate a visualization showing the sequence of ROI fixations over time.
+    
+    Args:
+        fixations: List of fixation dictionaries with ROI information
+        eye_data: DataFrame with eye tracking samples
+        output_path: Path to save the visualization (if None, just returns the figure)
+        title: Title for the plot
+        ax: Optional matplotlib Axes to draw on (if None, creates a new figure)
+        
+    Returns:
+        matplotlib Figure object
+    """
+    # Get time range from eye data
+    start_time = eye_data['timestamp'].min() if 'timestamp' in eye_data.columns else 0
+    end_time = eye_data['timestamp'].max() if 'timestamp' in eye_data.columns else 1000 * 60  # 1 minute default
+    
+    # Convert to seconds for better display
+    start_time_sec = start_time / 1000.0
+    end_time_sec = end_time / 1000.0
+    
+    # Get all unique ROI labels
+    roi_labels = sorted(set(f['roi'] for f in fixations if f.get('roi')))
+    
+    # Create a mapping of ROI labels to y-axis positions
+    roi_y_pos = {roi: i for i, roi in enumerate(roi_labels)}
+    
+    # Create figure if not provided
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 8))
+    else:
+        fig = ax.figure
+    
+    # Set up the plot
+    ax.set_xlim(start_time_sec, end_time_sec)
+    ax.set_ylim(-1, len(roi_labels))
+    ax.set_yticks(list(range(len(roi_labels))))
+    ax.set_yticklabels(roi_labels)
+    ax.set_xlabel("Time (seconds)")
+    ax.set_ylabel("Region of Interest")
+    ax.set_title(title)
+    ax.grid(True, linestyle='--', alpha=0.7)
+    
+    # Choose colors based on social vs non-social
+    colors = []
+    for roi in roi_labels:
+        # Find if this ROI is social based on our classification function
+        is_social = is_social_roi(roi)
+        
+        # Also check in fixation data if available
+        for f in fixations:
+            if f.get('roi') == roi and f.get('social', False):
+                is_social = True
+                break
+        
+        # Use red for social ROIs, blue for non-social
+        colors.append('salmon' if is_social else 'royalblue')
+    
+    # Plot fixations as vertical lines
+    for f in fixations:
+        if f.get('roi') in roi_y_pos:
+            y_pos = roi_y_pos[f['roi']]
+            start_sec = f['start_time'] / 1000.0
+            end_sec = f['end_time'] / 1000.0
+            duration_sec = (f['end_time'] - f['start_time']) / 1000.0
+            
+            # Get color based on social/non-social
+            color = 'salmon' if f.get('social', False) else 'royalblue'
+            
+            # Plot vertical line for this fixation
+            ax.plot([start_sec, start_sec], [y_pos - 0.4, y_pos + 0.4], 
+                    color=color, linewidth=2, alpha=0.7)
+            
+            # For longer fixations, draw a horizontal line showing duration
+            if duration_sec > 0.1:  # Only for fixations longer than 100ms
+                ax.plot([start_sec, end_sec], [y_pos, y_pos], 
+                        color=color, linewidth=4, alpha=0.5)
+            
+            # Add duration text for longer fixations (>500ms)
+            if duration_sec > 0.5:
+                # Display fixation duration in seconds
+                ax.text(start_sec + duration_sec/2, y_pos + 0.2, 
+                        f"{duration_sec:.1f}s", 
+                        fontsize=8, ha='center', va='bottom',
+                        bbox=dict(facecolor='white', alpha=0.7, pad=1))
+    
+    # Remove pagination indicator and footnote as requested
+    # This keeps the plot cleaner without pagination indicators or explanatory notes
+    
+    # Improve layout
+    plt.tight_layout()
+    
+    # Save if output path is provided
+    if output_path:
+        plt.savefig(output_path, dpi=120, bbox_inches='tight')
+    
+    return fig
+
+
+def plot_social_attention_bar(metrics: Dict[str, Any], output_path: str = None,
+                             title: str = "Social vs. Non-Social Attention") -> plt.Figure:
+    """
+    Generate a bar chart showing social vs. non-social attention metrics.
+    
+    Args:
+        metrics: Dictionary with social attention metrics
+        output_path: Path to save the visualization (if None, just returns the figure)
+        title: Title for the plot
+        
+    Returns:
+        matplotlib Figure object
+    """
+    # Create figure
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    
+    # Prepare data for fixation counts
+    social_count = metrics.get('social_fixation_count', 0)
+    non_social_count = metrics.get('non_social_fixation_count', 0)
+    
+    # Prepare data for dwell times
+    social_dwell = metrics.get('social_dwell_time', 0) / 1000.0  # Convert to seconds
+    non_social_dwell = metrics.get('non_social_dwell_time', 0) / 1000.0
+    
+    # Plot fixation counts
+    labels = ['Social', 'Non-Social']
+    counts = [social_count, non_social_count]
+    
+    bars1 = ax1.bar(labels, counts, color=['salmon', 'royalblue'])
+    ax1.set_title('Fixation Counts')
+    ax1.set_ylabel('Number of Fixations')
+    
+    # Add count labels on bars
+    for i, bar in enumerate(bars1):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                f'{counts[i]}', ha='center', va='bottom')
+    
+    # Plot dwell times
+    dwell_times = [social_dwell, non_social_dwell]
+    
+    bars2 = ax2.bar(labels, dwell_times, color=['salmon', 'royalblue'])
+    ax2.set_title('Dwell Times')
+    ax2.set_ylabel('Time (seconds)')
+    
+    # Add time labels on bars
+    for i, bar in enumerate(bars2):
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                f'{dwell_times[i]:.1f}s', ha='center', va='bottom')
+    
+    # Add overall percentages
+    social_percent = metrics.get('percent_fixations_social', 0)
+    fig.suptitle(f"{title}\nSocial Attention: {social_percent:.1f}%", fontsize=14)
+    
+    # Improve layout
+    plt.tight_layout()
+    fig.subplots_adjust(top=0.85)
+    
+    # Save if output path is provided
+    if output_path:
+        plt.savefig(output_path, dpi=120, bbox_inches='tight')
+    
+    return fig
