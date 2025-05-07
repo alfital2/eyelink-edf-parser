@@ -6,24 +6,34 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 
 ### Basic Eye Tracking Data Processing (test_parser.py)
 
-**TestParser** focuses on the fundamental functionality of the ASC file parser:
+**TestEyeLinkASCParser** focuses on the fundamental functionality of the ASC file parser:
 
-1. **test_parse_header** - Tests correct parsing of ASC file headers, using minimal ASC files with participant details and sampling rates.
-2. **test_parse_samples** - Tests extraction of eye tracking samples from ASC files, verifying eye positions, pupil sizes, and timestamps.
-3. **test_parse_events** - Tests parsing of eye tracking events (fixations, saccades, blinks) from ASC files.
-4. **test_process_asc_file** - Tests the complete ASC file processing pipeline, validating DataFrame creation and statistics.
-5. **test_feature_extraction** - Tests extraction of statistical features from eye tracking data, including means, standard deviations, and other metrics.
+1. **test_file_reading** - Tests that the file is read correctly with the right number of lines.
+2. **test_metadata_extraction** - Tests extraction of metadata from the file header.
+3. **test_message_parsing** - Tests that messages are parsed correctly with the right count and content.
+4. **test_sample_parsing** - Tests parsing of eye movement samples.
+5. **test_fixation_parsing** - Tests parsing of fixation events.
+6. **test_saccade_parsing** - Tests parsing of saccade events.
+7. **test_blink_parsing** - Tests parsing of blink events.
+8. **test_frame_marker_parsing** - Tests parsing of video frame markers.
+9. **test_dataframe_conversion** - Tests conversion of parsed data to pandas DataFrames.
+10. **test_unified_metrics_df** - Tests creation of the unified eye metrics DataFrame.
+11. **test_feature_extraction** - Tests extraction of aggregate features for machine learning.
+12. **test_extract_features_by_movie** - Tests extraction of features per movie.
+13. **test_movie_segment_parsing** - Tests parsing of movie segments and related information.
+14. **test_process_asc_file_function** - Tests the process_asc_file helper function.
 
 ### Advanced CSV Loading (test_advanced_csv_loading.py)
 
 **TestAdvancedCSVLoading** focuses on loading and processing complex CSV files:
 
-1. **test_load_csv_with_missing_columns** - Tests handling of CSV files with missing columns, verifying system behavior when critical columns are absent.
-2. **test_load_multiple_csv_files** - Tests functionality to merge multiple CSV files, validating the resulting DataFrame structure.
-3. **test_load_csv_normalization** - Tests normalization of eye position data, ensuring coordinates are normalized to [0,1] range.
-4. **test_load_csv_with_feature_extraction** - Tests feature extraction during CSV loading.
-5. **test_load_csv_error_handling** - Tests system behavior when loading invalid CSV files.
-6. **test_load_csv_with_empty_data** - Tests handling of empty CSV files.
+1. **test_standard_csv_loading** - Tests loading a standard unified eye metrics CSV file.
+2. **test_missing_columns** - Tests loading a CSV file with missing columns.
+3. **test_multiple_csv_with_different_columns** - Tests loading multiple CSV files with different column sets.
+4. **test_varying_row_count** - Tests loading multiple CSV files with varying row counts.
+5. **test_additional_columns** - Tests loading a CSV file with additional columns.
+6. **test_column_type_mismatches** - Tests loading CSV files with column type mismatches.
+7. **test_feature_extraction** - Tests feature extraction from CSV data.
 
 ### Animated Scanpath Visualization (test_animated_scanpath.py & test_animated_roi_scanpath.py)
 
@@ -79,32 +89,59 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 3. **test_many_vertices** - Tests performance with complex polygons with many vertices.
 4. **test_boundary_crossing_roi** - Tests handling of ROIs that cross screen boundaries.
 5. **test_simulated_eye_tracking** - Tests integration of eye tracking data with ROIs using synthetic data.
+6. **test_complex_roi_combination** - Tests a combination of complex ROI scenarios.
+7. **test_edge_case_coordinates** - Tests ROI detection with edge case coordinate values.
+8. **test_roi_data_analytics** - Tests the ROI manager's ability to analyze ROI data across frames.
 
 ### Error Recovery (test_error_recovery.py)
 
 **TestErrorRecovery** tests the system's resilience to invalid inputs:
 
-1. **test_recover_from_corrupt_file** - Tests recovery from corrupt ASC files.
-2. **test_recover_from_missing_data** - Tests recovery when data is incomplete.
-3. **test_recover_from_extreme_values** - Tests handling of extreme/invalid values.
+1. **test_empty_asc_file** - Tests handling of an empty ASC file.
+2. **test_header_only_asc_file** - Tests handling of an ASC file with only header info.
+3. **test_process_asc_malformed_file** - Tests process_asc_file with a malformed ASC file.
+4. **test_malformed_sample_asc_file** - Tests handling of an ASC file with malformed samples.
+5. **test_malformed_csv_file** - Tests handling of a malformed CSV file.
 
 ### Robust Parsing (test_robust_parsing.py)
 
 **TestRobustParsing** tests the parser's ability to handle non-standard formats:
 
 1. **test_mixed_recording_modes** - Tests parsing data with mixed recording modes (monocular/binocular).
-2. **test_partial_data** - Tests parsing partially complete data.
-3. **test_malformed_lines** - Tests parsing files with malformed lines.
-4. **test_format_variations** - Tests handling of variations in the ASC format.
+2. **test_malformed_data_lines** - Tests handling of files with malformed data lines.
+3. **test_extreme_values** - Tests handling of files with extreme values.
+4. **test_incomplete_header** - Tests handling of files with incomplete headers.
+5. **test_missing_message_timestamps** - Tests handling of files with missing timestamps in messages.
+6. **test_empty_sections** - Tests handling of files with empty sections.
+7. **test_inconsistent_event_formats** - Tests handling of files with inconsistent event formats.
 
 ### GUI Testing (test_gui.py)
 
-**TestGUIInitialization** & **TestGUIFileHandling** test the graphical interface:
+**TestGUIInitialization** tests the graphical interface initialization:
 
-1. **test_window_initialization** - Tests correct initialization of the main window.
-2. **test_tab_initialization** - Tests creation of all required interface tabs.
-3. **test_file_selection** - Tests file selection functionality for ASC/CSV files.
-4. **test_processing_thread** - Tests background processing functionality.
+1. **test_window_initialization** - Tests that the main window initializes correctly.
+2. **test_tab_initialization** - Tests that all required tabs are created.
+3. **test_feature_tables_initialization** - Tests that feature tables are properly initialized.
+4. **test_animated_scanpath_widget_initialization** - Tests that the animated scanpath widget initializes correctly.
+
+**TestGUIFileHandling** tests file and directory handling in the GUI:
+
+1. **test_asc_file_selection** - Tests ASC file selection.
+2. **test_csv_file_selection** - Tests CSV file selection.
+3. **test_output_directory_selection** - Tests output directory selection.
+4. **test_process_button_enabled** - Tests that process button is enabled when both files and output dir are selected.
+
+**TestProcessingThread** tests background processing:
+
+1. **test_processing_thread_csv_single** - Tests processing thread with a single CSV file.
+
+**TestAnimatedROIScanpathWidget** tests the ROI scanpath widget:
+
+1. **test_widget_initialization** - Tests that the widget initializes correctly.
+2. **test_data_loading** - Tests loading data into the widget.
+3. **test_roi_file_loading** - Tests loading ROI data into the widget.
+4. **test_display_options** - Tests the display options of the widget.
+5. **test_playback_controls** - Tests the playback controls of the widget.
 
 ### Movie Visualization Integration (test_movie_visualizer_integration.py)
 
@@ -117,7 +154,7 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 5. **test_empty_dataframe_handling** - Tests handling of empty dataframes.
 6. **test_unknown_plot_type** - Tests handling of unknown plot types.
 
-### Social Attention Analysis (test_social_attention_analysis.py & test_social_attention_visualization.py)
+### Social Attention Analysis (test_social_attention_analysis.py)
 
 **TestSocialAttentionAnalysis** tests social attention analysis:
 
@@ -127,22 +164,45 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 4. **test_roi_dwell_time_calculation** - Tests calculation of dwell time for different ROIs.
 5. **test_first_fixation_latency** - Tests measurement of time to first fixation on social stimuli.
 
+### Social Attention Visualization (test_social_attention_visualization.py)
+
 **TestSocialAttentionVisualization** tests visualization of social attention metrics:
 
-1. **test_roi_fixation_detection** - Tests detection of fixations within social ROIs.
+1. **test_roi_fixation_detection** - Tests that fixations in ROIs are correctly detected.
 2. **test_social_attention_metrics** - Tests calculation of social attention metrics.
 3. **test_social_attention_plot_generation** - Tests generation of social attention plots.
 
-### ROI Management (test_roi_manager.py & test_advanced_roi_manager.py)
+**TestROIFixationSequencePlot** tests sequence plot generation:
 
-**TestROIManager** & **TestAdvancedROIManager** test the ROI management system:
+1. **test_roi_fixation_sequence_no_annotations** - Tests that the ROI fixation sequence plot doesn't contain pagination and footnote.
 
-1. **test_load_roi_file** - Tests loading of ROI definitions from JSON files.
-2. **test_get_frame_rois** - Tests extraction of ROIs for specific frames.
-3. **test_find_roi_at_point** - Tests detection of ROIs at specific gaze points.
-4. **test_overlapping_rois** - Tests handling of overlapping ROIs.
-5. **test_multi_frame_roi_tracking** - Tests tracking of ROIs across multiple frames.
-6. **test_social_roi_classification** - Tests classification of ROIs as social/non-social.
+### ROI Management (test_roi_manager.py)
+
+**TestROIManager** tests the basic ROI management system:
+
+1. **test_roi_file_loading** - Tests that the ROI file is loaded correctly.
+2. **test_get_frame_rois** - Tests the get_frame_rois method.
+3. **test_find_roi_at_point** - Tests the find_roi_at_point method.
+4. **test_get_nearest_frame** - Tests the get_nearest_frame method.
+5. **test_point_in_polygon** - Tests the point_in_polygon method.
+6. **test_is_gaze_in_roi** - Tests the is_gaze_in_roi method.
+7. **test_get_unique_labels** - Tests the get_unique_labels method.
+8. **test_find_roi_at_gaze** - Tests the find_roi_at_gaze method.
+9. **test_empty_roi_file** - Tests loading an empty ROI file.
+10. **test_invalid_roi_file** - Tests loading an invalid ROI file.
+
+### Advanced ROI Management (test_advanced_roi_manager.py)
+
+**TestAdvancedROIManager** tests advanced ROI management features:
+
+1. **test_overlapping_rois** - Tests ROI manager behavior with overlapping ROIs.
+2. **test_roi_export_import** - Tests exporting and reimporting ROI data.
+3. **test_invalid_roi_handling** - Tests handling of invalid ROI data.
+4. **test_multi_frame_roi_tracking** - Tests ROI manager with changing ROIs across multiple frames.
+5. **test_social_roi_classification** - Tests social vs. non-social ROI classification.
+6. **test_complex_polygon_rois** - Tests ROI manager with complex polygon shapes.
+7. **test_extreme_roi_coordinates** - Tests ROI manager with extreme coordinate values.
+8. **test_polygon_containment_algorithms** - Tests the algorithms used for polygon containment.
 
 ### CSV Loading (test_csv_loader.py)
 
@@ -161,6 +221,17 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 1. **test_load_sample_data** - Tests loading sample eye tracking and ROI data.
 2. **test_create_integrated_visualization** - Tests creation of visualizations combining eye data and ROIs.
 3. **test_eye_data_roi_matching** - Tests matching eye positions to ROIs.
+
+### EyeLink Visualizer (test_eyelink_visualizer.py)
+
+**TestEyeLinkVisualizer** tests the EyeLink visualization functionality:
+
+1. **test_initialization** - Tests initialization of the visualizer.
+2. **test_discover_movie_folders** - Tests discovering movie folders.
+3. **test_load_movie_data** - Tests loading movie data.
+4. **test_ensure_plots_directory** - Tests ensuring plots directory exists.
+5. **test_plot_scanpath** - Tests plotting scanpath visualization.
+6. **test_time_window** - Tests plotting with time window constraints.
 
 ## Running Tests
 
@@ -196,10 +267,7 @@ The tests use several types of test data:
    - Contains social and non-social regions
    - Includes complex polygon shapes for testing edge cases
 
-3. **Benchmark Files** - Located in `tests/benchmark_files/`
-   - Reference data for comparing algorithm outputs
-
-4. **Generated Test Data** - Created on-the-fly during tests
+3. **Generated Test Data** - Created on-the-fly during tests
    - Generated using mock_data_generator.py
    - Customized for specific test scenarios
 
@@ -214,53 +282,16 @@ To run the tests, you need:
 - PyQt5 (for GUI tests)
 - pytest (optional, for additional test functionality)
 
-## Adding New Tests
-
-Follow these guidelines when adding new tests:
-
-1. Create test methods that start with `test_`
-2. Document what each test verifies
-3. Use clear assertions with descriptive messages
-4. For complex tests, break them into setup, action, and assertion phases
-5. Use temporary files/directories for test outputs
-6. Clean up after tests complete
-
 ## Test Coverage
 
-The current test suite provides comprehensive coverage of the key components in the system:
-
-### Core Components
+Core Components:
 - Parser: 85%
 - ROI Manager: 74%
 - ROI Integration: 75%
 - Animated ROI Scanpath: 66%
 - Animated Scanpath: 59%
-
-### Test Modules
-- test_parser: 99%
-- test_parser_expanded: 99%
-- test_robust_parsing: 99%
-- test_roi_manager: 99%
-- test_complex_roi_cases: 99%
-- test_advanced_csv_loading: 97%
-- test_error_recovery: 97%
-- test_social_attention_analysis: 96%
-- test_social_attention_visualization: 91%
-- test_animated_roi_scanpath: 91%
-- test_roi_integration: 93%
-- test_data_processing: 87%
-- test_movie_visualizer_integration: 86%
-- test_animated_scanpath: 81%
-- mock_data_generator: 95%
-
-### GUI Components
 - GUI/gui.py: 26% (Testing GUI components remains a challenge)
-- Documentation: 100%
-
-### Visualization
 - eyelink_visualizer.py: 5% (Needs improved test coverage)
 - movie_visualizer_integration.py: 0% (Needs test implementation)
 
 Overall code coverage: 64%
-
-These coverage statistics were generated using pytest-cov. Areas with lower coverage, particularly GUI components and visualization modules, would benefit from additional test development.
