@@ -39,7 +39,9 @@ gui_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if gui_dir not in sys.path:
     sys.path.insert(0, gui_dir)
 
-from GUI.gui import EyeMovementAnalysisGUI, ProcessingThread, AnimatedROIScanpathTab
+from GUI.gui import EyeMovementAnalysisGUI, ProcessingThread
+# The AnimatedROIScanpathTab is not directly exposed in the GUI module
+# It is created internally by the EyeMovementAnalysisGUI class
 from animated_roi_scanpath import AnimatedROIScanpathWidget
 
 
@@ -67,10 +69,10 @@ class TestGUIInitialization(unittest.TestCase):
         """Test that all required tabs are created."""
         # The central widget has a layout with a tab widget
         tabs = self.gui.centralWidget().layout().itemAt(0).widget()
-        self.assertEqual(tabs.count(), 5)
+        self.assertEqual(tabs.count(), 4)
         
         # Check tab titles
-        expected_tabs = ["Data Processing", "Results & Visualization", "Animated Scanpath", "Extracted Features", "Documentation"]
+        expected_tabs = ["Data Processing", "Results & Visualization", "Extracted Features", "Documentation"]
         for i, expected_tab in enumerate(expected_tabs):
             self.assertEqual(tabs.tabText(i), expected_tab)
     
@@ -91,13 +93,14 @@ class TestGUIInitialization(unittest.TestCase):
             self.assertIn("table", self.gui.feature_tables[category])
             self.assertIn("features", self.gui.feature_tables[category])
     
-    def test_animated_scanpath_tab_initialization(self):
-        """Test that the animated scanpath tab initializes correctly."""
-        self.assertIsInstance(self.gui.animated_viz_tab, AnimatedROIScanpathTab)
-        self.assertIsInstance(self.gui.animated_viz_tab.scanpath_widget, AnimatedROIScanpathWidget)
+    def test_animated_scanpath_widget_initialization(self):
+        """Test that the animated scanpath widget initializes correctly."""
+        # Check that animated scanpath is in the viz_stack widget
+        self.assertTrue(hasattr(self.gui, 'animated_scanpath'), "GUI should have animated_scanpath")
+        self.assertIsInstance(self.gui.animated_scanpath, AnimatedROIScanpathWidget)
         
         # Check that the widget is properly initialized
-        scanpath_widget = self.gui.animated_viz_tab.scanpath_widget
+        scanpath_widget = self.gui.animated_scanpath
         self.assertFalse(scanpath_widget.play_button.isEnabled())
         self.assertFalse(scanpath_widget.reset_button.isEnabled())
         self.assertFalse(scanpath_widget.timeline_slider.isEnabled())

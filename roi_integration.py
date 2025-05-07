@@ -89,6 +89,118 @@ def enhance_animated_scanpath_tab(animated_tab):
         animated_tab.highlight_cb = highlight_cb
 
 
+def load_sample_data(eye_data_path, roi_file_path):
+    """
+    Load sample eye tracking and ROI data for visualization.
+    
+    Args:
+        eye_data_path: Path to CSV file with eye tracking data
+        roi_file_path: Path to JSON file with ROI data
+        
+    Returns:
+        Tuple of (eye_data_df, roi_manager)
+    """
+    # Initialize ROI manager
+    roi_manager = ROIManager()
+    
+    # Load eye tracking data
+    try:
+        eye_data = pd.read_csv(eye_data_path)
+    except Exception as e:
+        print(f"Error loading eye data: {str(e)}")
+        return pd.DataFrame(), roi_manager
+    
+    # Load ROI data
+    if roi_file_path and os.path.exists(roi_file_path):
+        success = roi_manager.load_roi_file(roi_file_path)
+        if not success:
+            print(f"Failed to load ROI data from {roi_file_path}")
+    
+    return eye_data, roi_manager
+
+
+def create_integrated_visualization(eye_data, roi_manager, frame_number, save_path=None):
+    """
+    Create an integrated visualization showing eye positions and ROIs.
+    
+    Args:
+        eye_data: DataFrame with eye tracking data
+        roi_manager: ROIManager instance with loaded ROI data
+        frame_number: Frame number to visualize
+        save_path: Optional path to save the visualization
+        
+    Returns:
+        Matplotlib figure
+    """
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Set up normalized coordinates (0-1)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(1, 0)  # Invert y-axis to match screen coordinates
+    
+    # Draw ROIs for this frame
+    roi_manager.draw_rois_on_axis(ax, frame_number)
+    
+    # Filter eye data for this frame
+    frame_data = eye_data[eye_data['frame_number'] == frame_number]
+    
+    # Plot left and right eye positions
+    if 'x_left_norm' in frame_data.columns and 'y_left_norm' in frame_data.columns:
+        ax.scatter(frame_data['x_left_norm'], frame_data['y_left_norm'], 
+                  color='blue', label='Left Eye', s=50, alpha=0.7)
+    elif 'x_left' in frame_data.columns and 'y_left' in frame_data.columns:
+        # If normalized coordinates not available, use raw coordinates
+        # Assuming screen dimensions of 1280x1024 for normalization
+        ax.scatter(frame_data['x_left'] / 1280, frame_data['y_left'] / 1024, 
+                  color='blue', label='Left Eye', s=50, alpha=0.7)
+        
+    if 'x_right_norm' in frame_data.columns and 'y_right_norm' in frame_data.columns:
+        ax.scatter(frame_data['x_right_norm'], frame_data['y_right_norm'], 
+                  color='red', label='Right Eye', s=50, alpha=0.7)
+    elif 'x_right' in frame_data.columns and 'y_right' in frame_data.columns:
+        # If normalized coordinates not available, use raw coordinates
+        ax.scatter(frame_data['x_right'] / 1280, frame_data['y_right'] / 1024, 
+                  color='red', label='Right Eye', s=50, alpha=0.7)
+    
+    # Add title and labels
+    ax.set_title(f"Eye Positions and ROIs for Frame {frame_number}", fontsize=14)
+    ax.set_xlabel("X Position (normalized)", fontsize=12)
+    ax.set_ylabel("Y Position (normalized)", fontsize=12)
+    ax.legend()
+    
+    # Add grid
+    ax.grid(True, linestyle='--', alpha=0.5)
+    
+    # Save if requested
+    if save_path:
+        plt.savefig(save_path, dpi=120, bbox_inches='tight')
+    
+    return fig
+
+
+def is_social_roi(roi_label):
+    """
+    Determine if a ROI is social based on its label.
+    
+    Args:
+        roi_label: The label of the ROI
+        
+    Returns:
+        Boolean indicating if the ROI is considered social
+    """
+    social_labels = [
+        "face", "eyes", "mouth", "nose", "ear", "ears", "hair", 
+        "hand", "hands", "arm", "arms", "finger", "fingers",
+        "torso", "body", "person", "people", "human", "head",
+        "shoulder", "shoulders", "leg", "legs", "foot", "feet"
+    ]
+    
+    if not roi_label:
+        return False
+        
+    return any(social_label in roi_label.lower() for social_label in social_labels)
+
 def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager, 
                           min_duration_ms: int = 100) -> Dict[str, Any]:
     """
@@ -109,6 +221,7 @@ def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager,
     required_cols = ['timestamp', 'x_left', 'y_left', 'frame_number']
     for col in required_cols:
         if col not in eye_data.columns:
+            print(f"Missing required column: {col} in eye_data columns: {eye_data.columns}")
             return {"error": f"Missing required column: {col}", "fixation_count": 0, "fixations": []}
             
     # Sort data by timestamp
@@ -118,6 +231,12 @@ def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager,
     current_fixation = None
     fixation_samples = []
     fixation_count = 0
+    
+    # Debug information
+    print(f"Analyzing eye data with {len(sorted_data)} samples")
+    print(f"First few rows of data:")
+    print(sorted_data.head())
+    print(f"Data columns: {sorted_data.columns}")
     
     # Simple velocity-based fixation detection
     for i in range(1, len(sorted_data)):
@@ -133,7 +252,8 @@ def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager,
         dt = curr_row['timestamp'] - prev_row['timestamp']
         
         # Simple threshold-based fixation detection (using normalized coordinates)
-        if displacement < 0.03:  # Consider it part of a fixation if displacement is small
+        # Use a slightly larger threshold to ensure we're detecting fixations
+        if displacement < 0.05:  # Consider it part of a fixation if displacement is small (increased from 0.03)
             if current_fixation is None:
                 # Start a new fixation
                 current_fixation = {
@@ -173,6 +293,7 @@ def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager,
                         roi = roi_manager.find_roi_at_gaze(frame_number, x_mean, y_mean)
                         
                         # Create fixation record
+                        roi_label = roi['label'] if roi and 'label' in roi else None
                         fixation_record = {
                             'start_time': current_fixation['start_time'],
                             'end_time': current_fixation['end_time'],
@@ -180,8 +301,8 @@ def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager,
                             'x': x_mean,
                             'y': y_mean,
                             'frame': frame_number,
-                            'roi': roi['label'] if roi and 'label' in roi else None,
-                            'social': roi['social'] if roi and 'social' in roi else False
+                            'roi': roi_label,
+                            'social': roi.get('social', is_social_roi(roi_label)) if roi else False
                         }
                         
                         fixations.append(fixation_record)
@@ -210,6 +331,7 @@ def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager,
                 roi = roi_manager.find_roi_at_gaze(frame_number, x_mean, y_mean)
                 
                 # Create fixation record
+                roi_label = roi['label'] if roi and 'label' in roi else None
                 fixation_record = {
                     'start_time': current_fixation['start_time'],
                     'end_time': current_fixation['end_time'],
@@ -217,8 +339,8 @@ def analyze_roi_fixations(eye_data: pd.DataFrame, roi_manager: ROIManager,
                     'x': x_mean,
                     'y': y_mean,
                     'frame': frame_number,
-                    'roi': roi['label'] if roi and 'label' in roi else None,
-                    'social': roi['social'] if roi and 'social' in roi else False
+                    'roi': roi_label,
+                    'social': roi.get('social', is_social_roi(roi_label)) if roi else False
                 }
                 
                 fixations.append(fixation_record)
@@ -360,8 +482,10 @@ def plot_roi_fixation_sequence(fixations: List[Dict], eye_data: pd.DataFrame,
     # Choose colors based on social vs non-social
     colors = []
     for roi in roi_labels:
-        # Find if this ROI is social based on fixation data
-        is_social = False
+        # Find if this ROI is social based on our classification function
+        is_social = is_social_roi(roi)
+        
+        # Also check in fixation data if available
         for f in fixations:
             if f.get('roi') == roi and f.get('social', False):
                 is_social = True
