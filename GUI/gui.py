@@ -38,7 +38,7 @@ from GUI.data.parser import (
     process_asc_file, process_multiple_files, 
     load_csv_file, load_multiple_csv_files
 )
-from eyelink_visualizer import MovieEyeTrackingVisualizer
+from visualization.eyelink_visualizer import MovieEyeTrackingVisualizer
 from GUI.utils.documentation import (
     get_feature_explanations, get_visualization_explanations,
     get_formatted_feature_documentation, get_formatted_visualization_documentation
@@ -48,6 +48,12 @@ from GUI.theme_manager import ThemeManager
 from GUI.feature_table_manager import FeatureTableManager
 from GUI.visualization.plot_generator import PlotGenerator
 from GUI.data.processing_thread import ProcessingThread
+
+# Import model classes if needed
+# These imports are commented out as we're not fully implementing MVC yet
+# from GUI.models.eye_tracking_data import EyeTrackingData
+# from GUI.models.feature_model import FeatureModel 
+# from GUI.models.roi_model import ROIModel
 
 # Global variable for plot progress tracking
 current_plot_progress = "0/0"  # Will be updated during plot generation
@@ -75,6 +81,13 @@ class EyeMovementAnalysisGUI(QMainWindow):
         self.screen_width = 1280
         self.screen_height = 1024
         
+        # Get feature and visualization explanations from the documentation module
+        self.feature_explanations = get_feature_explanations()
+        self.visualization_explanations = get_visualization_explanations()
+
+        # Initialize theme manager
+        self.theme_manager = ThemeManager(self)
+        
         # Initialize plot generator
         self.plot_generator = PlotGenerator(
             self.screen_width, 
@@ -82,13 +95,6 @@ class EyeMovementAnalysisGUI(QMainWindow):
             self.visualization_results, 
             self.movie_visualizations
         )
-
-        # Get feature and visualization explanations from the documentation module
-        self.feature_explanations = get_feature_explanations()
-        self.visualization_explanations = get_visualization_explanations()
-
-        # Initialize theme manager
-        self.theme_manager = ThemeManager(self)
         
         # Initialize feature table manager
         self.feature_table_manager = FeatureTableManager(self, self.theme_manager, self.feature_explanations)

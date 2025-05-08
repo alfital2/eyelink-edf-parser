@@ -23,7 +23,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # Patch PyQt5's QApplication to allow headless testing
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
 app = QApplication.instance()
 if not app:
     app = QApplication(sys.argv)
@@ -52,6 +52,9 @@ class MockMovieEyeTrackingVisualizer:
 
 sys.modules['eyelink_visualizer'] = MagicMock()
 sys.modules['eyelink_visualizer'].MovieEyeTrackingVisualizer = MockMovieEyeTrackingVisualizer
+sys.modules['visualization'] = MagicMock()
+sys.modules['visualization.eyelink_visualizer'] = MagicMock()
+sys.modules['visualization.eyelink_visualizer'].MovieEyeTrackingVisualizer = MockMovieEyeTrackingVisualizer
 
 # Import GUI modules
 from GUI.gui import EyeMovementAnalysisGUI
@@ -173,72 +176,97 @@ class TestGUIFileHandling(unittest.TestCase):
         }
         pd.DataFrame(data).to_csv(self.csv_file, index=False)
     
-    @patch('PyQt5.QtWidgets.QFileDialog.getOpenFileNames')
-    def test_asc_file_selection(self, mock_file_dialog):
+    def test_asc_file_selection(self):
         """Test ASC file selection."""
-        # Mock file selection dialog to return our test ASC file
-        mock_file_dialog.return_value = ([self.asc_file], "ASC Files (*.asc)")
+        # Directly mock QFileDialog.getOpenFileNames at the module level
+        original_getOpenFileNames = QFileDialog.getOpenFileNames
         
-        # Trigger file selection
-        self.gui.select_files()
-        
-        # Check that file path was stored and file type detected correctly
-        self.assertEqual(self.gui.file_paths, [self.asc_file])
-        self.assertEqual(self.gui.selected_file_type, "ASC Files")
-        self.assertEqual(self.gui.file_label.text(), f"Selected: {os.path.basename(self.asc_file)}")
-        
-        # Process button should still be disabled until output dir is selected
-        self.assertFalse(self.gui.process_btn.isEnabled())
+        try:
+            # Mock file selection dialog to return our test ASC file
+            QFileDialog.getOpenFileNames = MagicMock(return_value=([self.asc_file], "ASC Files (*.asc)"))
+            
+            # Trigger file selection
+            self.gui.select_files()
+            
+            # Check that file path was stored and file type detected correctly
+            self.assertEqual(self.gui.file_paths, [self.asc_file])
+            self.assertEqual(self.gui.selected_file_type, "ASC Files")
+            self.assertEqual(self.gui.file_label.text(), f"Selected: {os.path.basename(self.asc_file)}")
+            
+            # Process button should still be disabled until output dir is selected
+            self.assertFalse(self.gui.process_btn.isEnabled())
+        finally:
+            # Restore the original method
+            QFileDialog.getOpenFileNames = original_getOpenFileNames
     
-    @patch('PyQt5.QtWidgets.QFileDialog.getOpenFileNames')
-    def test_csv_file_selection(self, mock_file_dialog):
+    def test_csv_file_selection(self):
         """Test CSV file selection."""
-        # Mock file selection dialog to return our test CSV file
-        mock_file_dialog.return_value = ([self.csv_file], "CSV Files (*.csv)")
+        # Directly mock QFileDialog.getOpenFileNames at the module level
+        original_getOpenFileNames = QFileDialog.getOpenFileNames
         
-        # Trigger file selection
-        self.gui.select_files()
-        
-        # Check that file path was stored and file type detected correctly
-        self.assertEqual(self.gui.file_paths, [self.csv_file])
-        self.assertEqual(self.gui.selected_file_type, "CSV Files")
-        self.assertEqual(self.gui.file_label.text(), f"Selected: {os.path.basename(self.csv_file)}")
-        
-        # Process button should still be disabled until output dir is selected
-        self.assertFalse(self.gui.process_btn.isEnabled())
+        try:
+            # Mock file selection dialog to return our test CSV file
+            QFileDialog.getOpenFileNames = MagicMock(return_value=([self.csv_file], "CSV Files (*.csv)"))
+            
+            # Trigger file selection
+            self.gui.select_files()
+            
+            # Check that file path was stored and file type detected correctly
+            self.assertEqual(self.gui.file_paths, [self.csv_file])
+            self.assertEqual(self.gui.selected_file_type, "CSV Files")
+            self.assertEqual(self.gui.file_label.text(), f"Selected: {os.path.basename(self.csv_file)}")
+            
+            # Process button should still be disabled until output dir is selected
+            self.assertFalse(self.gui.process_btn.isEnabled())
+        finally:
+            # Restore the original method
+            QFileDialog.getOpenFileNames = original_getOpenFileNames
     
-    @patch('PyQt5.QtWidgets.QFileDialog.getExistingDirectory')
-    def test_output_directory_selection(self, mock_dir_dialog):
+    def test_output_directory_selection(self):
         """Test output directory selection."""
-        # Mock directory selection dialog to return our test output directory
-        mock_dir_dialog.return_value = self.output_dir
+        # Directly mock QFileDialog.getExistingDirectory at the module level
+        original_getExistingDirectory = QFileDialog.getExistingDirectory
         
-        # Trigger output directory selection
-        self.gui.select_output_dir()
-        
-        # Check that output directory was stored correctly
-        self.assertEqual(self.gui.output_dir, self.output_dir)
-        self.assertEqual(self.gui.output_label.text(), f"Output: {self.output_dir}")
-        
-        # Process button should still be disabled until files are selected
-        self.assertFalse(self.gui.process_btn.isEnabled())
+        try:
+            # Mock directory selection dialog to return our test output directory
+            QFileDialog.getExistingDirectory = MagicMock(return_value=self.output_dir)
+            
+            # Trigger output directory selection
+            self.gui.select_output_dir()
+            
+            # Check that output directory was stored correctly
+            self.assertEqual(self.gui.output_dir, self.output_dir)
+            self.assertEqual(self.gui.output_label.text(), f"Output: {self.output_dir}")
+            
+            # Process button should still be disabled until files are selected
+            self.assertFalse(self.gui.process_btn.isEnabled())
+        finally:
+            # Restore the original method
+            QFileDialog.getExistingDirectory = original_getExistingDirectory
     
-    @patch('PyQt5.QtWidgets.QFileDialog.getOpenFileNames')
-    @patch('PyQt5.QtWidgets.QFileDialog.getExistingDirectory')
-    def test_process_button_enabled(self, mock_dir_dialog, mock_file_dialog):
+    def test_process_button_enabled(self):
         """Test that process button is enabled when both files and output dir are selected."""
-        # Mock file and directory selection
-        mock_file_dialog.return_value = ([self.csv_file], "CSV Files (*.csv)")
-        mock_dir_dialog.return_value = self.output_dir
+        # Directly mock QFileDialog methods at the module level
+        original_getOpenFileNames = QFileDialog.getOpenFileNames
+        original_getExistingDirectory = QFileDialog.getExistingDirectory
         
-        # Trigger file selection
-        self.gui.select_files()
-        
-        # Trigger output directory selection
-        self.gui.select_output_dir()
-        
-        # Check that process button is now enabled
-        self.assertTrue(self.gui.process_btn.isEnabled())
+        try:
+            # Mock file and directory selection
+            QFileDialog.getOpenFileNames = MagicMock(return_value=([self.csv_file], "CSV Files (*.csv)"))
+            QFileDialog.getExistingDirectory = MagicMock(return_value=self.output_dir)
+            
+            # Trigger file selection
+            self.gui.select_files()
+            
+            # Trigger output directory selection
+            self.gui.select_output_dir()
+            
+            # Check that process button is now enabled
+            self.assertTrue(self.gui.process_btn.isEnabled())
+        finally:
+            # Restore the original methods
+            QFileDialog.getOpenFileNames = original_getOpenFileNames
+            QFileDialog.getExistingDirectory = original_getExistingDirectory
 
 
 class TestProcessingThread(unittest.TestCase):
