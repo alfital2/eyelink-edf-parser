@@ -394,42 +394,44 @@ def compute_social_attention_metrics(fixation_data: Dict[str, Any],
     # Calculate ratio
     social_ratio = social_count / total_count if total_count > 0 else 0.0
     
-    # Calculate dwell times
-    social_dwell_time = sum(f['duration'] for f in social_fixations)
-    non_social_dwell_time = sum(f['duration'] for f in non_social_fixations)
+    # Calculate dwell times - convert to regular Python float
+    social_dwell_time = float(sum(float(f['duration']) for f in social_fixations))
+    non_social_dwell_time = float(sum(float(f['duration']) for f in non_social_fixations))
     total_dwell_time = social_dwell_time + non_social_dwell_time
     
     # Calculate percentage of time spent on social vs. non-social
-    social_time_percent = (social_dwell_time / total_dwell_time * 100) if total_dwell_time > 0 else 0.0
+    social_time_percent = float((social_dwell_time / total_dwell_time * 100) if total_dwell_time > 0 else 0.0)
     
     # Find first fixation in each ROI category
     roi_first_fixations = {}
     for f in sorted(fixations, key=lambda x: x['start_time']):
         if f['roi'] and f['roi'] not in roi_first_fixations:
-            roi_first_fixations[f['roi']] = f['start_time']
+            # Convert to float to avoid NumPy types
+            roi_first_fixations[f['roi']] = float(f['start_time'])
     
     # Calculate first fixation latency for social ROIs
     social_first_fixation = None
     for f in sorted(social_fixations, key=lambda x: x['start_time']):
-        social_first_fixation = f['start_time']
+        # Convert to float to avoid NumPy types
+        social_first_fixation = float(f['start_time'])
         break
     
     # Calculate time to first social fixation (relative to start of recording)
-    start_time = eye_data['timestamp'].min() if 'timestamp' in eye_data.columns else 0
-    time_to_first_social = (social_first_fixation - start_time) if social_first_fixation is not None else None
+    start_time = float(eye_data['timestamp'].min()) if 'timestamp' in eye_data.columns else 0
+    time_to_first_social = float(social_first_fixation - start_time) if social_first_fixation is not None else None
     
-    # Return metrics
+    # Return metrics - convert all NumPy types to native Python types
     return {
-        "social_attention_ratio": social_ratio,
-        "social_fixation_count": social_count,
-        "non_social_fixation_count": non_social_count,
-        "social_dwell_time": social_dwell_time,
-        "non_social_dwell_time": non_social_dwell_time,
-        "social_time_percent": social_time_percent,
-        "social_first_fixation_latency": social_first_fixation,
-        "time_to_first_social_fixation": time_to_first_social,
-        "first_fixations_by_roi": roi_first_fixations,
-        "percent_fixations_social": social_count / total_count * 100 if total_count > 0 else 0.0
+        "social_attention_ratio": float(social_ratio),
+        "social_fixation_count": int(social_count),
+        "non_social_fixation_count": int(non_social_count),
+        "social_dwell_time": float(social_dwell_time),
+        "non_social_dwell_time": float(non_social_dwell_time),
+        "social_time_percent": float(social_time_percent),
+        "social_first_fixation_latency": float(social_first_fixation) if social_first_fixation is not None else None,
+        "time_to_first_social_fixation": float(time_to_first_social) if time_to_first_social is not None else None,
+        "first_fixations_by_roi": {k: float(v) for k, v in roi_first_fixations.items()},
+        "percent_fixations_social": float(social_count / total_count * 100) if total_count > 0 else 0.0
     }
 
 
