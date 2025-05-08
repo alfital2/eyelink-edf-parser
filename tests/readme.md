@@ -221,6 +221,19 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 
 1. **test_roi_fixation_sequence_no_annotations** - Tests that the ROI fixation sequence plot doesn't contain pagination and footnote.
 
+### Negative Test Cases (test_negative_cases.py)
+
+**TestNegativeCases** tests error handling and edge cases:
+
+1. **test_parser_with_empty_file** - Tests that the parser handles empty files gracefully.
+2. **test_parser_with_malformed_file** - Tests that the parser handles malformed ASC files.
+3. **test_missing_required_columns** - Tests handling data with missing required columns.
+4. **test_process_asc_file_with_invalid_path** - Tests process_asc_file with an invalid file path.
+5. **test_load_csv_with_missing_columns** - Tests that CSV loading handles missing columns appropriately.
+6. **test_roi_manager_with_invalid_json** - Tests ROI manager with invalid JSON data.
+7. **test_invalid_fixation_data** - Tests handling invalid fixation data.
+8. **test_convert_numpy_types** - Tests proper conversion of NumPy types to standard Python types.
+
 ### ROI Management (test_roi_manager.py)
 
 **TestROIManager** tests the basic ROI management system:
@@ -269,14 +282,22 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 
 ### EyeLink Visualizer (test_eyelink_visualizer.py)
 
-**TestEyeLinkVisualizer** tests the EyeLink visualization functionality:
+**TestMovieEyeTrackingVisualizer** tests the EyeLink visualization functionality:
 
-1. **test_initialization** - Tests initialization of the visualizer.
-2. **test_discover_movie_folders** - Tests discovering movie folders.
-3. **test_load_movie_data** - Tests loading movie data.
-4. **test_ensure_plots_directory** - Tests ensuring plots directory exists.
-5. **test_plot_scanpath** - Tests plotting scanpath visualization.
-6. **test_time_window** - Tests plotting with time window constraints.
+1. **test_validate_plot_data** - Tests the validation of data for plotting.
+2. **test_create_plot_filename** - Tests creating plot filenames with various parameters.
+3. **test_discover_movie_folders** - Tests discovering movie folders with unified eye metrics.
+4. **test_load_movie_data** - Tests loading movie data from folders.
+5. **test_ensure_plots_directory** - Tests creating and accessing the plots directory.
+6. **test_save_plot** - Tests saving plots to the filesystem.
+7. **test_plot_scanpath_with_valid_data** - Tests creating scanpath plots with valid data.
+8. **test_plot_scanpath_with_time_window** - Tests creating scanpath plots with time window constraints.
+9. **test_plot_scanpath_with_empty_data** - Tests handling empty data in scanpath plotting.
+10. **test_plot_heatmap** - Tests creating heatmap visualizations of gaze density.
+11. **test_plot_fixation_duration_distribution** - Tests plotting fixation duration distributions.
+12. **test_plot_pupil_size_timeseries** - Tests plotting pupil size over time.
+13. **test_generate_report** - Tests generating HTML reports with visualizations.
+14. **test_negative_cases** - Tests error handling when visualizing missing or invalid data.
 
 ## Running Tests
 
@@ -347,12 +368,23 @@ See `tests/gui_testing_notes.md` for detailed implementation guidance on dialog 
 
 Core Components:
 - Parser: 85%
-- ROI Manager: 74%
-- ROI Integration: 75%
+- ROI Manager: 76% 
+- ROI Integration: 80%
 - Animated ROI Scanpath: 66%
 - Animated Scanpath: 59%
-- GUI/gui.py: 26% (Testing GUI components remains a challenge)
-- eyelink_visualizer.py: 5% (Needs improved test coverage)
-- movie_visualizer_integration.py: 0% (Needs test implementation)
+- GUI/gui.py: 51%
+- GUI/visualization/eyelink_visualizer.py: 47% (Improved from 5%)
+- GUI/visualization/plot_generator.py: 42% (New tests added)
+- movie_visualizer_integration.py: 0% (Still needs implementation)
 
-Overall code coverage: 64%
+### Recent Improvements
+
+We've made significant improvements to the test coverage for visualization components:
+
+1. **Added Negative Test Cases**: Created dedicated test file (`test_negative_cases.py`) to test error handling throughout the system, including tests for NumPy type conversion which fixed a segmentation fault issue.
+
+2. **Enhanced Visualization Testing**: Added tests for both `eyelink_visualizer.py` (47% coverage) and `plot_generator.py` (42% coverage) with tests for key visualization functions.
+
+3. **Improved Error Handling**: Added tests to verify proper error handling for edge cases, invalid inputs, and missing data.
+
+Overall code coverage: 66%
