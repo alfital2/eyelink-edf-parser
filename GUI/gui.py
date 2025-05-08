@@ -34,20 +34,20 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QFont, QCursor, QPalette
 
 # Local application imports
-from parser import (
+from GUI.data.parser import (
     process_asc_file, process_multiple_files, 
     load_csv_file, load_multiple_csv_files
 )
 from eyelink_visualizer import MovieEyeTrackingVisualizer
-from documentation import (
+from GUI.utils.documentation import (
     get_feature_explanations, get_visualization_explanations,
     get_formatted_feature_documentation, get_formatted_visualization_documentation
 )
 from animated_roi_scanpath import AnimatedROIScanpathWidget
-from theme_manager import ThemeManager
-from feature_table_manager import FeatureTableManager
-from plot_generator import PlotGenerator
-from processing_thread import ProcessingThread
+from GUI.theme_manager import ThemeManager
+from GUI.feature_table_manager import FeatureTableManager
+from GUI.visualization.plot_generator import PlotGenerator
+from GUI.data.processing_thread import ProcessingThread
 
 # Global variable for plot progress tracking
 current_plot_progress = "0/0"  # Will be updated during plot generation
@@ -92,6 +92,9 @@ class EyeMovementAnalysisGUI(QMainWindow):
         
         # Initialize feature table manager
         self.feature_table_manager = FeatureTableManager(self, self.theme_manager, self.feature_explanations)
+        
+        # Initialize feature_tables attribute
+        self.feature_tables = self.feature_table_manager.feature_tables
 
         # Initialize UI
         self.init_ui()
@@ -445,6 +448,7 @@ class EyeMovementAnalysisGUI(QMainWindow):
         tabs.addTab(results_tab, "Results & Visualization")
         tabs.addTab(features_tab, "Extracted Features")
         tabs.addTab(documentation_tab, "Documentation")
+        
 
         # Set the central widget
         self.setCentralWidget(central_widget)

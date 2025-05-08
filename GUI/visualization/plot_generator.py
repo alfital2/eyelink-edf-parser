@@ -809,27 +809,15 @@ class PlotGenerator:
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
         progress_dialog = QDialog()
         progress_dialog.setWindowTitle("Generating Social Attention Plots")
-        progress_dialog.setFixedSize(400, 150)
+        progress_dialog.setFixedSize(400, 100)
 
         dialog_layout = QVBoxLayout(progress_dialog)
 
-        # Overall progress status
-        overall_status_label = QLabel(f"Generating plots for {movie}...")
-        overall_status_label.setStyleSheet("font-weight: bold;")
-        dialog_layout.addWidget(overall_status_label)
-
-        # Overall progress bar
-        overall_progress_bar = QProgressBar()
-        overall_progress_bar.setRange(0, 100)
-        overall_progress_bar.setValue(0)
-        overall_progress_bar.setStyleSheet("QProgressBar {height: 15px;}")
-        dialog_layout.addWidget(overall_progress_bar)
-
-        # Current task status
+        # Status label
         status_label = QLabel("Preparing data...")
         dialog_layout.addWidget(status_label)
 
-        # Current task progress bar
+        # Progress bar
         progress_bar = QProgressBar()
         progress_bar.setRange(0, 100)
         progress_bar.setValue(0)
@@ -843,7 +831,7 @@ class PlotGenerator:
         # 5. ROI Dwell Time Comparison (merged with Attention Time)
         # 6. ROI Fixation Duration Distribution
         # 7. ROI Temporal Heatmap
-        total_plots = 6  # Excluding the removed ROI Revisitation plot
+        total_plots = 7
         current_plot = 0
 
         # Helper function to update overall progress
@@ -851,10 +839,8 @@ class PlotGenerator:
             nonlocal current_plot
             current_plot = plot_num
             overall_progress = int((plot_num / total_plots) * 100)
-            overall_progress_bar.setValue(overall_progress)
-            overall_status_label.setText(f"Generating plots for {movie}... ({plot_num}/{total_plots})")
-            status_label.setText(status_text)
-            progress_bar.setValue(0)  # Reset progress for new task
+            progress_bar.setValue(overall_progress)
+            status_label.setText(f"Generating plots for {movie}... ({plot_num}/{total_plots}): {status_text}")
             QApplication.processEvents()
 
             # Add a global progress indicator variable to be used in each plot
@@ -1162,16 +1148,14 @@ class PlotGenerator:
                     print(f"DEBUG: Added {len(advanced_plots)} advanced plots to created_plots list")
 
             # Final update
-            overall_progress_bar.setValue(100)
-            overall_status_label.setText(f"Completed generating plots for {movie}")
-            status_label.setText("All plots generated successfully")
+            progress_bar.setValue(100)
+            status_label.setText(f"Completed generating plots for {movie}")
             QApplication.processEvents()
             
             # Update HTML report if available
             report_updated = False
             if self.report_path:
-                overall_status_label.setText(f"Updating HTML report...")
-                status_label.setText("Adding new visualizations to report...")
+                status_label.setText(f"Updating HTML report - adding new visualizations...")
                 QApplication.processEvents()
                 report_updated = self.update_html_report(movie)
             

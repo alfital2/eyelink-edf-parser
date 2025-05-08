@@ -5,7 +5,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QCursor
 import pandas as pd
 
-from feature_definitions import FEATURE_CATEGORIES
+from GUI.feature_definitions import FEATURE_CATEGORIES
 
 
 class FeatureTableManager:

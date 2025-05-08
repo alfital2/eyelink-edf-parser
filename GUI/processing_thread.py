@@ -11,7 +11,7 @@ from parser import (
     process_asc_file, process_multiple_files, 
     load_csv_file, load_multiple_csv_files
 )
-from eyelink_visualizer import MovieEyeTrackingVisualizer
+from visualization.eyelink_visualizer import MovieEyeTrackingVisualizer
 
 class ProcessingThread(QThread):
     """Thread for running processing operations without freezing the GUI"""

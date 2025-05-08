@@ -33,13 +33,29 @@ if not app:
 import os
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
-# Add GUI directory to path to ensure documentation module is found
-gui_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'GUI')
-if gui_dir not in sys.path:
-    sys.path.insert(0, gui_dir)
+# Add parent directory to path to ensure all modules are found
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
-from GUI.gui import EyeMovementAnalysisGUI, ProcessingThread
+# Mock required modules to avoid dependencies
+sys.modules['scipy'] = MagicMock()
+sys.modules['scipy.ndimage'] = MagicMock()
+sys.modules['scipy.ndimage.gaussian_filter1d'] = MagicMock()
+
+# Create a mock for eyelink_visualizer
+class MockMovieEyeTrackingVisualizer:
+    def __init__(self, *args, **kwargs):
+        pass
+
+sys.modules['eyelink_visualizer'] = MagicMock()
+sys.modules['eyelink_visualizer'].MovieEyeTrackingVisualizer = MockMovieEyeTrackingVisualizer
+
+# Import GUI modules
+from GUI.gui import EyeMovementAnalysisGUI
+from GUI.data.processing_thread import ProcessingThread
 # The AnimatedROIScanpathTab is not directly exposed in the GUI module
 # It is created internally by the EyeMovementAnalysisGUI class
 from animated_roi_scanpath import AnimatedROIScanpathWidget
@@ -51,6 +67,13 @@ class TestGUIInitialization(unittest.TestCase):
     def setUp(self):
         """Set up the test environment."""
         self.gui = EyeMovementAnalysisGUI()
+        # Make sure feature tables are created
+        if hasattr(self.gui, 'feature_table_manager'):
+            self.gui.feature_tables = self.gui.feature_table_manager.feature_tables
+            # Force table creation by mocking the create_feature_tables method
+            # This is needed because in the test environment, we might not have full UI initialization
+            layout_mock = MagicMock()
+            self.gui.feature_table_manager.create_feature_tables(layout_mock)
     
     def tearDown(self):
         """Clean up after tests."""

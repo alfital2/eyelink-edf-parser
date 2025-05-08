@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QComboBox, QFileDialog, QSizePolicy, QGridLayout)
 from PyQt5.QtCore import Qt, QTimer, QSize
 
-from roi_manager import ROIManager
+from GUI.visualization.roi_manager import ROIManager
 
 
 class AnimatedROIScanpathWidget(QWidget):
