@@ -115,33 +115,78 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 6. **test_empty_sections** - Tests handling of files with empty sections.
 7. **test_inconsistent_event_formats** - Tests handling of files with inconsistent event formats.
 
-### GUI Testing (test_gui.py)
+### GUI Testing 
+
+#### Basic GUI Structure and Initialization (test_gui.py)
 
 **TestGUIInitialization** tests the graphical interface initialization:
 
-1. **test_window_initialization** - Tests that the main window initializes correctly.
-2. **test_tab_initialization** - Tests that all required tabs are created.
-3. **test_feature_tables_initialization** - Tests that feature tables are properly initialized.
-4. **test_animated_scanpath_widget_initialization** - Tests that the animated scanpath widget initializes correctly.
+1. **test_window_initialization** - Tests that the main window initializes correctly with proper window title, geometry, and initial state.
+2. **test_tab_initialization** - Tests that all required tabs (Data Processing, Results & Visualization, Extracted Features, Documentation) are created.
+3. **test_feature_tables_initialization** - Tests that feature tables are properly initialized with correct categories and components.
+4. **test_animated_scanpath_widget_initialization** - Tests that the animated scanpath widget initializes correctly with proper defaults.
 
 **TestGUIFileHandling** tests file and directory handling in the GUI:
 
-1. **test_asc_file_selection** - Tests ASC file selection.
-2. **test_csv_file_selection** - Tests CSV file selection.
-3. **test_output_directory_selection** - Tests output directory selection.
-4. **test_process_button_enabled** - Tests that process button is enabled when both files and output dir are selected.
+1. **test_asc_file_selection** - Tests ASC file selection: clicking "Load Source File(s)" → selecting ASC file → verifying UI updates.
+2. **test_csv_file_selection** - Tests CSV file selection: clicking "Load Source File(s)" → selecting CSV file → verifying UI updates.
+3. **test_output_directory_selection** - Tests output directory selection: clicking "Select Output Directory" → choosing directory → verifying UI updates.
+4. **test_process_button_enabled** - Tests that process button is enabled when both files and output dir are selected, disabled otherwise.
 
 **TestProcessingThread** tests background processing:
 
-1. **test_processing_thread_csv_single** - Tests processing thread with a single CSV file.
+1. **test_processing_thread_csv_single** - Tests processing thread with a single CSV file: initialization → data loading → feature extraction → signal emission.
 
 **TestAnimatedROIScanpathWidget** tests the ROI scanpath widget:
 
-1. **test_widget_initialization** - Tests that the widget initializes correctly.
-2. **test_data_loading** - Tests loading data into the widget.
-3. **test_roi_file_loading** - Tests loading ROI data into the widget.
-4. **test_display_options** - Tests the display options of the widget.
-5. **test_playback_controls** - Tests the playback controls of the widget.
+1. **test_widget_initialization** - Tests that the widget initializes correctly with proper default states.
+2. **test_data_loading** - Tests loading data into the widget: loading eye tracking data → updating UI → enabling controls.
+3. **test_roi_file_loading** - Tests loading ROI data: selecting ROI file → loading ROI definitions → updating display.
+4. **test_display_options** - Tests the display options: toggling show/hide options → verifying display state changes.
+5. **test_playback_controls** - Tests the playback controls: play/pause → reset → timeline slider → checking state changes.
+
+#### GUI Data Loading and Processing (test_gui_data_loading.py)
+
+**TestGUIDataLoading** tests data loading and processing flows:
+
+1. **test_file_selection_updates_gui** - Tests file selection flow: selecting CSV file → verifying file path storage → checking UI label updates.
+2. **test_output_dir_selection_updates_gui** - Tests output directory selection: choosing directory → verifying path storage → checking UI updates.
+3. **test_process_button_enabled_when_ready** - Tests process button state: selecting file → choosing output directory → verifying button becomes enabled.
+4. **test_process_data_starts_thread** - Tests process button action: clicking process → verifying thread starts → checking UI updates during processing.
+5. **test_processing_thread_signal_connections** - Tests signal connections: emitting signals from thread → verifying proper GUI updates → checking data flow.
+6. **test_update_progress_changes_progress_bar** - Tests progress updates: sending progress signals → verifying progress bar updates.
+7. **test_update_status_updates_status_label_and_log** - Tests status updates: sending status messages → checking status label → verifying log updates.
+8. **test_processing_error_shows_message_box** - Tests error handling: triggering processing error → verifying error dialog appears.
+
+#### File Operations (test_file_operations.py)
+
+**TestFileOperations** tests file operations in the GUI:
+
+1. **test_asc_file_selection** - Tests ASC file selection: choosing ASC file → verifying file path storage → checking UI updates.
+2. **test_csv_file_selection** - Tests CSV file selection: choosing CSV file → verifying file path storage → checking file type detection.
+3. **test_multiple_file_selection** - Tests selecting multiple files: choosing multiple files → verifying UI updates → checking file type detection.
+4. **test_output_directory_selection** - Tests output directory selection: choosing directory → verifying storage → checking label updates.
+5. **test_roi_file_selection** - Tests ROI file selection: selecting ROI file → checking path storage → verifying UI updates → enabling social buttons.
+6. **test_save_features** - Tests saving features to CSV: generating features → selecting save location → writing file → verifying file contents.
+7. **test_save_features_cancel** - Tests canceling save dialog: opening save dialog → canceling → verifying no file is written.
+8. **test_save_features_error_handling** - Tests error handling during save: triggering write error → verifying error dialog appears.
+9. **test_save_features_no_data** - Tests save attempt with no data: trying to save with no features → verifying warning appears.
+10. **test_save_features_success_message** - Tests success feedback: saving features successfully → verifying success dialog appears.
+11. **test_open_report** - Tests report opening: generating report → clicking open report → verifying browser launches with correct URL.
+12. **test_open_report_not_found** - Tests missing report handling: setting invalid report path → clicking open → verifying warning appears.
+
+#### Signal and UI Interaction (test_signal_connections.py)
+
+**TestSignalConnections** tests signal-slot connections and UI interactions:
+
+1. **test_process_button_connection** - Tests process button click: clicking process button → verifying processing starts.
+2. **test_select_file_button_connection** - Tests file button click: clicking file selection button → verifying file dialog opens.
+3. **test_select_output_button_connection** - Tests output button click: clicking output selection button → verifying directory dialog opens.
+4. **test_movie_combo_connection** - Tests movie selection dropdown: changing selected movie → verifying visualization updates.
+5. **test_viz_type_combo_connection** - Tests visualization type dropdown: changing visualization type → verifying display updates.
+6. **test_feature_movie_combo_connection** - Tests feature movie dropdown: changing selected movie → verifying feature display updates.
+7. **test_processing_thread_signal_connections** - Tests thread signal connections: emitting thread signals → verifying UI responses.
+8. **test_gui_process_data_creates_thread** - Tests thread creation: clicking process → verifying thread creation with correct parameters.
 
 ### Movie Visualization Integration (test_movie_visualizer_integration.py)
 
@@ -281,6 +326,22 @@ To run the tests, you need:
 - matplotlib
 - PyQt5 (for GUI tests)
 - pytest (optional, for additional test functionality)
+
+## GUI Test Best Practices
+
+The GUI tests follow these best practices for reliable automated testing:
+
+1. **Dialog Mocking**: All dialog boxes (QFileDialog, QMessageBox) are mocked to prevent dialogs appearing during automated test runs.
+
+2. **Signal Connection Testing**: Signal-slot connections are tested by directly connecting and emitting signals, then verifying the correct slots are called.
+
+3. **Direct Module-Level Mocking**: PyQt dialog classes are mocked at the module level instead of using decorator-based patching for more reliable testing.
+
+4. **Component Testing**: Individual components like the feature table manager and animated scanpath widget are tested in isolation.
+
+5. **Integration Testing**: Full integration tests verify the workflow from file selection through processing to visualization.
+
+See `tests/gui_testing_notes.md` for detailed implementation guidance on dialog mocking.
 
 ## Test Coverage
 
