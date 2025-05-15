@@ -66,6 +66,9 @@ class AnimatedROIScanpathWidget(QWidget):
         # ROI statistics
         self.roi_dwell_times = {}  # Label -> total time
         self.current_roi_start_time = None
+        
+        # Deterministic ROI dwell times (calculated once during data loading)
+        self.deterministic_roi_dwell_times = {}
 
         # Initialize UI
         self.init_ui()
@@ -278,6 +281,11 @@ class AnimatedROIScanpathWidget(QWidget):
         
         # Add settings container to main layout
         layout.addWidget(settings_container)
+        
+        # Create a label to show when deterministic calculation is complete
+        self.deterministic_label = QLabel("Deterministic ROI dwell times: Not yet calculated")
+        self.deterministic_label.setStyleSheet("color: green; font-style: italic;")
+        layout.addWidget(self.deterministic_label)
 
         # Remove status label entirely as it's not needed and takes up extra space
 
@@ -369,6 +377,9 @@ class AnimatedROIScanpathWidget(QWidget):
                         # Extend ROI frames if movie has more frames
                         if movie_frame_count > 0:
                             self.roi_manager.extend_roi_frames(movie_frame_count)
+                            
+                        # Calculate deterministic dwell times
+                        self.calculate_deterministic_dwell_times()
                     except Exception as e:
                         print(f"Failed to extend ROI frames: {str(e)}")
                 
@@ -605,6 +616,9 @@ class AnimatedROIScanpathWidget(QWidget):
                         # Extend ROI frames if movie has more frames
                         if movie_frame_count > 0:
                             self.roi_manager.extend_roi_frames(movie_frame_count)
+                            
+                        # Calculate deterministic dwell times
+                        self.calculate_deterministic_dwell_times()
                     except Exception as e:
                         print(f"Failed to extend ROI frames: {str(e)}")
             else:
@@ -756,14 +770,141 @@ class AnimatedROIScanpathWidget(QWidget):
         self.is_playing = False
         self.play_button.setText("▶ Play")
         self.timer.stop()
-        self.roi_dwell_times = {}
+        self.roi_dwell_times = {}  # Reset animation-based dwell times
         self.current_roi_start_time = None
         self.active_roi_id = None
         self.current_roi = None
         
         # Reset displays
         self.current_roi_label.setText("Current ROI: None")
-        self.roi_stats_label.setText("ROI Dwell Times: Not available")
+        # Don't reset the stats label since we'll use deterministic dwell times
+        self.update_roi_stats_display()
+        
+    def calculate_deterministic_dwell_times(self):
+        """
+        Calculate deterministic ROI dwell times by processing all frames sequentially.
+        This method processes every frame exactly once to ensure consistent results
+        regardless of animation playback or system performance.
+        """
+        if self.data is None or 'frame_number' not in self.data.columns:
+            print("Cannot calculate deterministic dwell times: No data or frame_number column missing")
+            return
+            
+        print("Calculating deterministic ROI dwell times...")
+        
+        # Reset dwell times dictionary
+        self.deterministic_roi_dwell_times = {}
+        
+        # Variables to track ROI state across frames
+        current_roi = None
+        current_roi_id = None
+        roi_entry_time = None
+        
+        # Process each frame in sequence
+        for i in range(len(self.data)):
+            frame_data = self.data.iloc[i]
+            
+            # Skip frames with missing data
+            if pd.isna(frame_data['frame_number']):
+                continue
+                
+            # Get frame number and timestamp
+            frame_num = int(frame_data['frame_number'])
+            frame_time = frame_data['time_sec']
+            
+            # Check for gaze position in ROIs
+            active_roi = None
+            
+            # First try left eye if available
+            x_left = frame_data['x_left_norm'] if 'x_left_norm' in frame_data else frame_data['x_left'] / self.screen_width
+            y_left = frame_data['y_left_norm'] if 'y_left_norm' in frame_data else frame_data['y_left'] / self.screen_height
+            
+            if not (pd.isna(x_left) or pd.isna(y_left)):
+                active_roi = self.roi_manager.find_roi_at_gaze(frame_num, x_left, y_left)
+            
+            # If no hit with left eye, try right eye
+            if active_roi is None:
+                x_right = frame_data['x_right_norm'] if 'x_right_norm' in frame_data else frame_data['x_right'] / self.screen_width
+                y_right = frame_data['y_right_norm'] if 'y_right_norm' in frame_data else frame_data['y_right'] / self.screen_height
+                
+                if not (pd.isna(x_right) or pd.isna(y_right)):
+                    active_roi = self.roi_manager.find_roi_at_gaze(frame_num, x_right, y_right)
+            
+            # Process ROI transitions
+            if active_roi is not None and 'object_id' in active_roi:
+                active_roi_id = active_roi['object_id']
+                
+                if active_roi_id != current_roi_id:
+                    # Entered a new ROI
+                    
+                    # First, finish timing for previous ROI if any
+                    if current_roi_id is not None and roi_entry_time is not None:
+                        roi_label = current_roi.get('label', 'unknown')
+                        dwell_time = frame_time - roi_entry_time
+                        
+                        # Add to accumulated time
+                        self.deterministic_roi_dwell_times[roi_label] = self.deterministic_roi_dwell_times.get(roi_label, 0) + dwell_time
+                        
+                        print(f"Frame {frame_num}: ROI transition - Left {roi_label} after {dwell_time:.6f}s")
+                    
+                    # Start timing for new ROI
+                    current_roi = active_roi
+                    current_roi_id = active_roi_id
+                    roi_entry_time = frame_time
+                    
+                    roi_label = active_roi.get('label', 'unknown')
+                    print(f"Frame {frame_num}: ROI transition - Entered {roi_label} at {frame_time:.6f}s")
+                
+                # Else - still in the same ROI, continue timing
+            
+            elif current_roi_id is not None:
+                # Exited all ROIs
+                roi_label = current_roi.get('label', 'unknown')
+                dwell_time = frame_time - roi_entry_time
+                
+                # Add to accumulated time
+                self.deterministic_roi_dwell_times[roi_label] = self.deterministic_roi_dwell_times.get(roi_label, 0) + dwell_time
+                
+                print(f"Frame {frame_num}: ROI transition - Left {roi_label} after {dwell_time:.6f}s")
+                
+                # Reset tracking
+                current_roi = None
+                current_roi_id = None
+                roi_entry_time = None
+        
+        # Handle the case where we're still in an ROI at the end of processing
+        if current_roi_id is not None and roi_entry_time is not None:
+            # Get the time of the last frame
+            last_frame_time = self.data.iloc[-1]['time_sec']
+            
+            roi_label = current_roi.get('label', 'unknown')
+            dwell_time = last_frame_time - roi_entry_time
+            
+            # Add to accumulated time
+            self.deterministic_roi_dwell_times[roi_label] = self.deterministic_roi_dwell_times.get(roi_label, 0) + dwell_time
+            
+            print(f"End of data: ROI {roi_label} - Added final {dwell_time:.6f}s")
+        
+        # Print summary
+        print("Deterministic ROI dwell times calculated:")
+        for label, time in sorted(self.deterministic_roi_dwell_times.items(), key=lambda x: x[1], reverse=True):
+            print(f"  {label}: {time:.2f}s")
+        
+        # Update the deterministic calculation status label
+        status_text = "Deterministic ROI dwell times: "
+        if self.deterministic_roi_dwell_times:
+            status_text += "Calculated"
+            for label, time in sorted(self.deterministic_roi_dwell_times.items(), key=lambda x: x[1], reverse=True)[:3]:  # Show top 3
+                status_text += f" | {label}: {time:.2f}s"
+            if len(self.deterministic_roi_dwell_times) > 3:
+                status_text += " | ..."
+        else:
+            status_text += "No ROIs detected"
+            
+        self.deterministic_label.setText(status_text)
+        self.deterministic_label.setStyleSheet("color: green; font-weight: bold; font-style: italic;")
+            
+        # Update the display with the calculated values
         self.update_roi_stats_display()
 
     def update_display(self):
@@ -831,16 +972,29 @@ class AnimatedROIScanpathWidget(QWidget):
             # Update current ROI and tracking for dwell times
             if active_roi is not None and 'object_id' in active_roi:
                 active_roi_id = active_roi['object_id']
+                
+                # Debug active ROI detection
+                print(f"DEBUG FRAME {self.current_frame} (Time: {self.data.iloc[self.current_frame]['time_sec']:.4f}): ")
+                print(f"  Eye pos: ({x_left:.6f}, {y_left:.6f})")
+                print(f"  Detected ROI: {active_roi.get('label', 'unknown')} (ID: {active_roi_id})")
+                
                 if active_roi_id != self.active_roi_id:
                     # We've entered a new ROI
                     current_time = self.data.iloc[self.current_frame]['time_sec']
-
-                    # End timing for previous ROI if applicable
+                    print(f"  !!! ROI TRANSITION: Entering {active_roi.get('label', 'unknown')} at time {current_time:.4f}")
+                    
+                    # Debug previous ROI timing
                     if self.active_roi_id is not None and self.current_roi_start_time is not None:
                         roi_label = self.current_roi[
                             'label'] if self.current_roi and 'label' in self.current_roi else 'unknown'
                         dwell_time = current_time - self.current_roi_start_time
-                        self.roi_dwell_times[roi_label] = self.roi_dwell_times.get(roi_label, 0) + dwell_time
+                        prev_time = self.roi_dwell_times.get(roi_label, 0)
+                        new_time = prev_time + dwell_time
+                        
+                        print(f"  Leaving {roi_label}: +{dwell_time:.6f}s (was: {prev_time:.6f}s, now: {new_time:.6f}s)")
+                        
+                        # Update dwell time
+                        self.roi_dwell_times[roi_label] = new_time
 
                     # Start timing for new ROI
                     self.current_roi = active_roi
@@ -855,13 +1009,22 @@ class AnimatedROIScanpathWidget(QWidget):
             elif self.active_roi_id is not None:
                 # We've exited an ROI
                 current_time = self.data.iloc[self.current_frame]['time_sec']
+                print(f"DEBUG FRAME {self.current_frame} (Time: {self.data.iloc[self.current_frame]['time_sec']:.4f}):")
+                print(f"  Eye pos: ({x_left:.6f}, {y_left:.6f})")
+                print(f"  !!! ROI TRANSITION: Exiting all ROIs at time {current_time:.4f}")
 
                 # End timing for previous ROI
                 if self.current_roi_start_time is not None:
                     roi_label = self.current_roi[
                         'label'] if self.current_roi and 'label' in self.current_roi else 'unknown'
                     dwell_time = current_time - self.current_roi_start_time
-                    self.roi_dwell_times[roi_label] = self.roi_dwell_times.get(roi_label, 0) + dwell_time
+                    prev_time = self.roi_dwell_times.get(roi_label, 0)
+                    new_time = prev_time + dwell_time
+                    
+                    print(f"  Leaving {roi_label}: +{dwell_time:.6f}s (was: {prev_time:.6f}s, now: {new_time:.6f}s)")
+                    
+                    # Update dwell time
+                    self.roi_dwell_times[roi_label] = new_time
 
                 # Reset current ROI tracking
                 self.current_roi = None
@@ -965,13 +1128,16 @@ class AnimatedROIScanpathWidget(QWidget):
             self.current_roi_label.setText("Current ROI: None")
             
         # Update ROI Dwell Times label
-        if not self.roi_dwell_times:
+        # Use deterministic dwell times if available, otherwise use dynamic dwell times
+        display_dwell_times = self.deterministic_roi_dwell_times if self.deterministic_roi_dwell_times else self.roi_dwell_times
+        
+        if not display_dwell_times:
             self.roi_stats_label.setText("ROI Dwell Times: Not available")
             return
 
         # Format ROI dwell times for display
         stats_text = "ROI Dwell Times: "
-        for label, time in sorted(self.roi_dwell_times.items(), key=lambda x: x[1], reverse=True):
+        for label, time in sorted(display_dwell_times.items(), key=lambda x: x[1], reverse=True):
             stats_text += f"{label}: {time:.2f}s, "
 
         # Remove trailing comma and space
