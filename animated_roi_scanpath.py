@@ -360,6 +360,18 @@ class AnimatedROIScanpathWidget(QWidget):
                 self.show_rois_cb.setChecked(True)
                 self.show_rois = True
                 
+                # Extend ROI frames to match movie frame count if needed
+                if self.data is not None and 'frame_number' in self.data.columns:
+                    try:
+                        # Get the maximum frame number from the movie data
+                        movie_frame_count = int(self.data['frame_number'].max())
+                        
+                        # Extend ROI frames if movie has more frames
+                        if movie_frame_count > 0:
+                            self.roi_manager.extend_roi_frames(movie_frame_count)
+                    except Exception as e:
+                        print(f"Failed to extend ROI frames: {str(e)}")
+                
                 # Redraw with the new ROI data
                 self.redraw()
                 
@@ -406,6 +418,18 @@ class AnimatedROIScanpathWidget(QWidget):
                     self.roi_file_label.setText(f"ROI File: {os.path.basename(roi_path)}")
                     self.show_rois = True
                     self.show_rois_cb.setChecked(True)
+                    
+                    # Extend ROI frames to match movie frame count if needed
+                    if 'frame_number' in self.data.columns:
+                        try:
+                            # Get the maximum frame number from the movie data
+                            movie_frame_count = int(self.data['frame_number'].max())
+                            
+                            # Extend ROI frames if movie has more frames
+                            if movie_frame_count > 0:
+                                self.roi_manager.extend_roi_frames(movie_frame_count)
+                        except Exception as e:
+                            print(f"Failed to extend ROI frames: {str(e)}")
                 else:
                     self.roi_file_label.setText("No ROI file selected")
             
@@ -571,6 +595,18 @@ class AnimatedROIScanpathWidget(QWidget):
             if success:
                 # Update the ROI file label
                 self.roi_file_label.setText(f"ROI File: {os.path.basename(roi_data_path)}")
+                
+                # Get the movie frame count for ROI frame matching
+                if 'frame_number' in self.data.columns:
+                    try:
+                        # Get the maximum frame number from the movie data
+                        movie_frame_count = int(self.data['frame_number'].max())
+                        
+                        # Extend ROI frames if movie has more frames
+                        if movie_frame_count > 0:
+                            self.roi_manager.extend_roi_frames(movie_frame_count)
+                    except Exception as e:
+                        print(f"Failed to extend ROI frames: {str(e)}")
             else:
                 # Failed to load ROI data - silently handle
                 pass

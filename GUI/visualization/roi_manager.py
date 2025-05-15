@@ -26,6 +26,7 @@ class ROIManager:
         self.roi_data = {}  # Frame -> List of ROIs
         self.loaded_file = None
         self.frame_numbers = []
+        self.original_frame_count = 0  # Store the original frame count before extension
 
     def load_roi_file(self, file_path: str) -> bool:
         """
@@ -480,6 +481,66 @@ class ROIManager:
                 )
 
         print(f"Successfully drew {roi_count} ROIs")
+        
+    def extend_roi_frames(self, movie_frame_count: int) -> bool:
+        """
+        Extend ROI frames to match movie frame count by extending the duration of each frame.
+        
+        This function distributes ROIs across a larger number of frames when the ROI frame count
+        is less than the movie frame count. It calculates a duration ratio and maps original ROI
+        frames to extended frame numbers.
+        
+        Args:
+            movie_frame_count: The number of frames in the movie to match
+            
+        Returns:
+            True if extension was successful, False otherwise
+        """
+        if not self.roi_data:
+            print("Error: No ROI data to extend")
+            return False
+            
+        # Store original frame count before any extension
+        self.original_frame_count = len(self.frame_numbers)
+        
+        # If ROI frame count already matches or exceeds movie frame count, no extension needed
+        if self.original_frame_count >= movie_frame_count:
+            print(f"ROI frame count ({self.original_frame_count}) already matches or exceeds movie frame count ({movie_frame_count})")
+            return True
+            
+        try:
+            # Calculate the extension ratio
+            ratio = movie_frame_count / self.original_frame_count
+            print(f"Extending ROI frames - Original: {self.original_frame_count}, Movie: {movie_frame_count}, Ratio: {ratio:.2f}")
+            
+            # Create a new extended ROI data dictionary
+            extended_roi_data = {}
+            
+            # Go through each original frame and map it to extended frames
+            for i, original_frame in enumerate(sorted(self.roi_data.keys())):
+                # Calculate the start and end frame in the extended range
+                start_frame = int(i * ratio)
+                end_frame = int((i + 1) * ratio) if i < self.original_frame_count - 1 else movie_frame_count
+                
+                # Get ROIs for this original frame
+                rois = self.roi_data[original_frame]
+                
+                # Apply these ROIs to each frame in the extended range
+                for extended_frame in range(start_frame, end_frame):
+                    extended_roi_data[extended_frame] = rois.copy()
+                    
+            # Replace the original ROI data with extended data
+            self.roi_data = extended_roi_data
+            
+            # Update frame numbers list
+            self.frame_numbers = sorted(self.roi_data.keys())
+            
+            print(f"Successfully extended ROI frames from {self.original_frame_count} to {len(self.frame_numbers)}")
+            return True
+            
+        except Exception as e:
+            print(f"Error extending ROI frames: {str(e)}")
+            return False
         
     def create_test_visualization(self, frame_number: int = None, save_path: Optional[str] = None):
         """
