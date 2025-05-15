@@ -113,7 +113,18 @@ def load_sample_data(eye_data_path, roi_file_path):
     # Load ROI data
     if roi_file_path and os.path.exists(roi_file_path):
         success = roi_manager.load_roi_file(roi_file_path)
-        if not success:
+        if success:
+            # Extend ROI frames to match movie frame count if needed
+            if 'frame_number' in eye_data.columns:
+                try:
+                    # Get the maximum frame number from the eye tracking data
+                    max_frame = int(eye_data['frame_number'].max())
+                    if max_frame > 0:
+                        # Extend ROI frames if the movie has more frames
+                        roi_manager.extend_roi_frames(max_frame)
+                except Exception as e:
+                    print(f"Warning: Failed to extend ROI frames: {str(e)}")
+        else:
             print(f"Failed to load ROI data from {roi_file_path}")
     
     return eye_data, roi_manager
@@ -138,6 +149,17 @@ def create_integrated_visualization(eye_data, roi_manager, frame_number, save_pa
     # Set up normalized coordinates (0-1)
     ax.set_xlim(0, 1)
     ax.set_ylim(1, 0)  # Invert y-axis to match screen coordinates
+    
+    # Ensure ROI frames match movie frames if not already done
+    if 'frame_number' in eye_data.columns:
+        try:
+            # Get the maximum frame number from the eye tracking data
+            max_frame = int(eye_data['frame_number'].max())
+            if max_frame > 0 and len(roi_manager.frame_numbers) > 0 and max_frame > len(roi_manager.frame_numbers):
+                # Extend ROI frames if the movie has more frames
+                roi_manager.extend_roi_frames(max_frame)
+        except Exception as e:
+            print(f"Warning: Failed to extend ROI frames: {str(e)}")
     
     # Draw ROIs for this frame
     roi_manager.draw_rois_on_axis(ax, frame_number)
