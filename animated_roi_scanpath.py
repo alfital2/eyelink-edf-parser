@@ -282,10 +282,7 @@ class AnimatedROIScanpathWidget(QWidget):
         # Add settings container to main layout
         layout.addWidget(settings_container)
         
-        # Create a label to show when deterministic calculation is complete
-        self.deterministic_label = QLabel("Deterministic ROI dwell times: Not yet calculated")
-        self.deterministic_label.setStyleSheet("color: green; font-style: italic;")
-        layout.addWidget(self.deterministic_label)
+        # No need for a deterministic label anymore
 
         # Remove status label entirely as it's not needed and takes up extra space
 
@@ -306,9 +303,9 @@ class AnimatedROIScanpathWidget(QWidget):
             
         self.ax.set_xlim(0, 1)
         self.ax.set_ylim(1, 0)  # Invert y-axis to match screen coordinates
-        self.ax.set_title("Animated Scan Path with ROIs", fontsize=14)
-        self.ax.set_xlabel("X Position (normalized)", fontsize=12)
-        self.ax.set_ylabel("Y Position (normalized)", fontsize=12)
+        self.ax.set_title(f"Animated Scan Path with ROIs (Screen: {self.screen_width}x{self.screen_height})", fontsize=14)
+        self.ax.set_xlabel("X Position (normalized 0-1)", fontsize=12)
+        self.ax.set_ylabel("Y Position (normalized 0-1)", fontsize=12)
         self.ax.grid(True, linestyle='--', alpha=0.7)
 
         # Create empty line objects for animation
@@ -498,27 +495,21 @@ class AnimatedROIScanpathWidget(QWidget):
         if self.data is None:
             return
         
-        # First check if the normalization columns already exist
-        if ('x_left_norm' in self.data.columns and 
-            'y_left_norm' in self.data.columns and 
-            'x_right_norm' in self.data.columns and 
-            'y_right_norm' in self.data.columns):
-            return
-            
-        # Add normalized columns if they don't exist
+        # Always recalculate normalization columns when screen dimensions may have changed
+        # This ensures consistent normalization regardless of screen size changes
         try:    
             # Check if normalization is needed
             max_x = max(self.data['x_left'].max(), self.data['x_right'].max())
             max_y = max(self.data['y_left'].max(), self.data['y_right'].max())
             
             if max_x > 1.0 or max_y > 1.0:
-                # Normalize to [0, 1] range
+                # Normalize to [0, 1] range using current screen dimensions
                 self.data['x_left_norm'] = self.data['x_left'] / self.screen_width
                 self.data['y_left_norm'] = self.data['y_left'] / self.screen_height
                 self.data['x_right_norm'] = self.data['x_right'] / self.screen_width
                 self.data['y_right_norm'] = self.data['y_right'] / self.screen_height
             else:
-                # Already normalized
+                # Already normalized - just use directly
                 self.data['x_left_norm'] = self.data['x_left']
                 self.data['y_left_norm'] = self.data['y_left']
                 self.data['x_right_norm'] = self.data['x_right']
@@ -790,6 +781,23 @@ class AnimatedROIScanpathWidget(QWidget):
             print("Cannot calculate deterministic dwell times: No data or frame_number column missing")
             return
             
+        # Show a message dialog to inform the user that calculation is in progress
+        from PyQt5.QtWidgets import QMessageBox
+        from PyQt5.QtCore import Qt
+        
+        # Create and show the message dialog (non-modal/non-blocking)
+        progress_dialog = QMessageBox(self)
+        progress_dialog.setWindowTitle("Processing")
+        progress_dialog.setText("Calculating ROI dwell times...")
+        progress_dialog.setIcon(QMessageBox.Information)
+        progress_dialog.setStandardButtons(QMessageBox.NoButton)
+        progress_dialog.setWindowModality(Qt.NonModal)
+        progress_dialog.show()
+        
+        # Process GUI events to ensure dialog is displayed
+        from PyQt5.QtWidgets import QApplication
+        QApplication.processEvents()
+        
         print("Calculating deterministic ROI dwell times...")
         
         # Reset dwell times dictionary
@@ -889,20 +897,9 @@ class AnimatedROIScanpathWidget(QWidget):
         print("Deterministic ROI dwell times calculated:")
         for label, time in sorted(self.deterministic_roi_dwell_times.items(), key=lambda x: x[1], reverse=True):
             print(f"  {label}: {time:.2f}s")
-        
-        # Update the deterministic calculation status label
-        status_text = "Deterministic ROI dwell times: "
-        if self.deterministic_roi_dwell_times:
-            status_text += "Calculated"
-            for label, time in sorted(self.deterministic_roi_dwell_times.items(), key=lambda x: x[1], reverse=True)[:3]:  # Show top 3
-                status_text += f" | {label}: {time:.2f}s"
-            if len(self.deterministic_roi_dwell_times) > 3:
-                status_text += " | ..."
-        else:
-            status_text += "No ROIs detected"
             
-        self.deterministic_label.setText(status_text)
-        self.deterministic_label.setStyleSheet("color: green; font-weight: bold; font-style: italic;")
+        # Close the progress dialog
+        progress_dialog.close()
             
         # Update the display with the calculated values
         self.update_roi_stats_display()
@@ -1153,6 +1150,10 @@ class AnimatedROIScanpathWidget(QWidget):
         # Additionally clear any lingering text objects
         while self.ax.texts:
             self.ax.texts[0].remove()
+            
+        # Renormalize coordinates if dimensions have changed
+        if self.data is not None:
+            self._normalize_coordinates()
             
         # Initialize the plot with fresh elements
         self.init_plot()

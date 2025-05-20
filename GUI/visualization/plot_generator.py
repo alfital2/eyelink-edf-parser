@@ -1200,7 +1200,17 @@ class PlotGenerator:
             }
 
     def _point_in_polygon(self, x, y, coordinates):
-        """Check if a point is inside a polygon defined by coordinates using an optimized ray casting algorithm"""
+        """
+        Check if a point is inside a polygon defined by coordinates using an optimized ray casting algorithm.
+        
+        Args:
+            x: X coordinate (normalized 0-1)
+            y: Y coordinate (normalized 0-1)
+            coordinates: List of polygon coordinate dictionaries with 'x' and 'y' keys (normalized 0-1)
+            
+        Returns:
+            bool: True if the point is inside the polygon, False otherwise
+        """
         # Extract points from coordinates
         points = [(coord['x'], coord['y']) for coord in coordinates]
 

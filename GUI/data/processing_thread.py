@@ -31,7 +31,7 @@ class ProcessingThread(QThread):
     error_occurred = pyqtSignal(str)
 
     def __init__(self, file_paths, output_dir, visualize, extract_features, generate_report=False,
-                 file_type="ASC Files"):
+                 file_type="ASC Files", screen_width=1280, screen_height=1024):
         """
         Initialize the processing thread
         
@@ -42,6 +42,8 @@ class ProcessingThread(QThread):
             extract_features: Whether to extract eye movement features
             generate_report: Whether to generate an HTML report
             file_type: Type of files to process ("ASC Files" or "CSV Files")
+            screen_width: Width of the screen in pixels
+            screen_height: Height of the screen in pixels
         """
         super().__init__()
         self.file_paths = file_paths
@@ -50,6 +52,8 @@ class ProcessingThread(QThread):
         self.extract_features = extract_features
         self.generate_report = generate_report
         self.file_type = file_type
+        self.screen_width = screen_width
+        self.screen_height = screen_height
 
     def run(self):
         """Main processing method that runs in a separate thread"""
@@ -158,7 +162,7 @@ class ProcessingThread(QThread):
 
                 visualizer = MovieEyeTrackingVisualizer(
                     base_dir=self.data_dir,
-                    screen_size=(1280, 1024)
+                    screen_size=(self.screen_width, self.screen_height)
                 )
 
                 participant_id = None
