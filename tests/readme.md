@@ -1,6 +1,6 @@
 # Eye Tracking Analysis Test Suite
 
-This directory contains a comprehensive test suite for the ASD eye tracking analysis system, comprising 130 individual tests across multiple modules. These tests ensure the reliability and correctness of all components, from basic file parsing to complex social attention analysis.
+This directory contains a comprehensive test suite for the ASD eye tracking analysis system, comprising 210 individual tests across multiple modules. These tests ensure the reliability and correctness of all components, from basic file parsing to complex social attention analysis.
 
 ## Test Suite Structure
 
@@ -114,6 +114,33 @@ This directory contains a comprehensive test suite for the ASD eye tracking anal
 5. **test_missing_message_timestamps** - Tests handling of files with missing timestamps in messages.
 6. **test_empty_sections** - Tests handling of files with empty sections.
 7. **test_inconsistent_event_formats** - Tests handling of files with inconsistent event formats.
+
+### Aspect Ratio Testing (test_aspect_ratio_basic.py & test_custom_aspect_ratio.py)
+
+**TestAspectRatioBasic** tests basic aspect ratio functionality:
+
+1. **test_aspect_ratio_combo_exists** - Tests that the aspect ratio combo box exists in the GUI.
+2. **test_aspect_ratio_options_exist** - Tests that aspect ratio combo box has the expected options.
+3. **test_aspect_ratio_data_values** - Tests that aspect ratio combo box items have the correct data values.
+4. **test_settings_manager_creation** - Tests that SettingsManager can be created properly.
+
+**TestCustomAspectRatio** tests extended aspect ratio functionality:
+
+1. **test_aspect_ratio_combo_initialization** - Tests proper initialization of the aspect ratio combo box.
+2. **test_aspect_ratio_change** - Tests changing the aspect ratio and signal handling.
+3. **test_update_screen_dimensions_updates_values** - Tests that screen dimensions are updated correctly.
+4. **test_update_screen_dimensions_updates_plot_generator** - Tests that plot generator dimensions are updated.
+5. **test_update_screen_dimensions_updates_animated_scanpath** - Tests updating animated scanpath dimensions.
+6. **test_settings_manager_save_dimensions** - Tests saving dimensions to settings.
+7. **test_available_aspect_ratios** - Tests the available aspect ratio options.
+8. **test_processing_thread_gets_current_dimensions** - Tests processing thread uses current dimensions.
+9. **test_settings_load_from_previous_session** - Tests loading settings from a previous session.
+
+### ROI Frame Extension (test_roi_frame_extension.py)
+
+**TestROIFrameExtension** tests ROI management across video frames:
+
+1. **test_roi_frame_extension** - Tests the extension of ROI data across multiple frames.
 
 ### GUI Testing 
 
@@ -362,29 +389,32 @@ The GUI tests follow these best practices for reliable automated testing:
 
 5. **Integration Testing**: Full integration tests verify the workflow from file selection through processing to visualization.
 
-See `tests/gui_testing_notes.md` for detailed implementation guidance on dialog mocking.
-
 ## Test Coverage
 
 Core Components:
 - Parser: 85%
-- ROI Manager: 76% 
+- ROI Manager: 77% 
 - ROI Integration: 80%
-- Animated ROI Scanpath: 66%
+- Animated ROI Scanpath: 55%
 - Animated Scanpath: 59%
-- GUI/gui.py: 51%
-- GUI/visualization/eyelink_visualizer.py: 47% (Improved from 5%)
-- GUI/visualization/plot_generator.py: 42% (New tests added)
-- movie_visualizer_integration.py: 0% (Still needs implementation)
+- GUI/gui.py: 65%
+- GUI/visualization/eyelink_visualizer.py: 47%
+- GUI/visualization/plot_generator.py: 42%
+- GUI/utils/settings_manager.py: 86% (New)
+- GUI/utils/visualization_helper.py: 14% (New)
 
 ### Recent Improvements
 
-We've made significant improvements to the test coverage for visualization components:
+We've made significant improvements to the test coverage:
 
-1. **Added Negative Test Cases**: Created dedicated test file (`test_negative_cases.py`) to test error handling throughout the system, including tests for NumPy type conversion which fixed a segmentation fault issue.
+1. **Custom Aspect Ratio Support**: Added tests for the new aspect ratio features, including basic GUI elements (`test_aspect_ratio_basic.py`) and extended functionality (`test_custom_aspect_ratio.py`).
 
-2. **Enhanced Visualization Testing**: Added tests for both `eyelink_visualizer.py` (47% coverage) and `plot_generator.py` (42% coverage) with tests for key visualization functions.
+2. **Settings Management**: Added testing for the settings manager which allows persistent storage of user preferences, particularly screen dimensions (86% coverage).
 
-3. **Improved Error Handling**: Added tests to verify proper error handling for edge cases, invalid inputs, and missing data.
+3. **Visualization Helper**: Added initial tests for the new visualization helper utilities that assist with display formatting and scaling (14% coverage, needs expansion).
 
-Overall code coverage: 66%
+4. **Improved GUI Coverage**: Enhanced overall GUI coverage to 65% (up from 51%) with the addition of aspect ratio testing.
+
+5. **Added Negative Test Cases**: Created dedicated test file (`test_negative_cases.py`) to test error handling throughout the system, including tests for NumPy type conversion which fixed a segmentation fault issue.
+
+Overall code coverage: 67% (up from 66%)
