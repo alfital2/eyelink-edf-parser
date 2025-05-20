@@ -142,11 +142,14 @@ class ROIManager:
 
         # Need at least 3 points to form a polygon
         if num_points < 3:
+            print(f"DEBUG POLYGON: Not enough points to form polygon - need at least 3, got {num_points}")
             return False
 
         # Ray casting algorithm
         inside = False
         j = num_points - 1
+        
+        crossing_points = []  # For debugging
 
         for i in range(num_points):
             xi, yi = poly_points[i]
@@ -154,18 +157,44 @@ class ROIManager:
 
             # Check if point is on an edge
             if (yi == y and xi == x) or (yj == y and xj == x):
+                print(f"DEBUG POLYGON: Point ({x:.6f}, {y:.6f}) is exactly on a vertex: ({xi:.6f}, {yi:.6f}) or ({xj:.6f}, {yj:.6f})")
                 return True
 
             # Check if the point is on a horizontal edge
             if (yi == yj) and (yi == y) and (min(xi, xj) <= x <= max(xi, xj)):
+                print(f"DEBUG POLYGON: Point ({x:.6f}, {y:.6f}) is on horizontal edge: Y={yi:.6f} from X={min(xi, xj):.6f} to X={max(xi, xj):.6f}")
                 return True
 
-            # Cast ray
-            if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
-                inside = not inside
-
+            # Debug near-boundary cases
+            y_diff_i = abs(yi - y)
+            y_diff_j = abs(yj - y)
+            
+            if y_diff_i < 0.0001 or y_diff_j < 0.0001:
+                print(f"DEBUG POLYGON: Point ({x:.6f}, {y:.6f}) is very close to Y-value of edge: V{i}=({xi:.6f}, {yi:.6f}) diff={y_diff_i:.8f}, V{j}=({xj:.6f}, {yj:.6f}) diff={y_diff_j:.8f}")
+            
+            # Cast ray - this is where floating point issues could occur
+            crossing = ((yi > y) != (yj > y))
+            if crossing:
+                # Calculate x-intercept - potential source of floating point errors
+                try:
+                    x_intercept = (xj - xi) * (y - yi) / (yj - yi) + xi
+                    is_left_of_point = x < x_intercept
+                    
+                    x_diff = abs(x - x_intercept)
+                    if x_diff < 0.0001:
+                        print(f"DEBUG POLYGON: Ray from ({x:.6f}, {y:.6f}) crosses edge very close to point: intercept at x={x_intercept:.8f}, diff={x_diff:.8f}")
+                    
+                    if is_left_of_point:
+                        crossing_points.append((x_intercept, y))
+                        inside = not inside
+                        
+                except ZeroDivisionError:
+                    print(f"DEBUG POLYGON: Division by zero in ray casting - yj={yj:.6f}, yi={yi:.6f}")
+                    # Skip this edge if division by zero
+            
             j = i
 
+        print(f"DEBUG POLYGON: Point ({x:.6f}, {y:.6f}) with {len(crossing_points)} crossings is {'INSIDE' if inside else 'OUTSIDE'} polygon")
         return inside
 
     def is_gaze_in_roi(self, x: float, y: float, roi: Dict[str, Any]) -> bool:
@@ -208,19 +237,26 @@ class ROIManager:
         Returns:
             ROI dictionary if the point is inside an ROI, None otherwise
         """
+        print(f"DEBUG ROI: Checking point ({x:.6f}, {y:.6f}) at frame {frame_number}")
         rois = self.get_frame_rois(frame_number)
+        print(f"DEBUG ROI: Found {len(rois)} ROIs for frame {frame_number}")
         
         # Find all ROIs that contain the point
         matching_rois = []
         for roi in rois:
-            if self.is_gaze_in_roi(x, y, roi):
+            roi_label = roi.get('label', 'unknown')
+            point_in_roi = self.is_gaze_in_roi(x, y, roi)
+            print(f"DEBUG ROI:   Checking if point in ROI '{roi_label}': {point_in_roi}")
+            if point_in_roi:
                 matching_rois.append(roi)
         
         if not matching_rois:
+            print(f"DEBUG ROI: No matching ROIs found")
             return None
             
         # If we have only one matching ROI, return it
         if len(matching_rois) == 1:
+            print(f"DEBUG ROI: Found single matching ROI: {matching_rois[0].get('label', 'unknown')}")
             return matching_rois[0]
         
         # Special case handling for the Eye/Face test from test_advanced_roi_manager.py
@@ -306,22 +342,34 @@ class ROIManager:
         Returns:
             ROI dictionary if found, None otherwise
         """
+        print(f"DEBUG FIND_ROI: Searching for ROI at ({x:.6f}, {y:.6f}) for frame {frame_number}")
+        
         # First check if the specified frame exists
         if frame_number in self.roi_data:
+            print(f"DEBUG FIND_ROI: Found exact frame {frame_number}")
             return self.find_roi_at_point(frame_number, x, y)
 
         # If frame doesn't exist and use_nearest_frame is enabled, try nearest frame
         if use_nearest_frame:
             # Check if we have any frames loaded
             if not self.frame_numbers:
+                print(f"DEBUG FIND_ROI: No frames loaded, cannot find nearest")
                 return None
                 
             # Only use nearest frame if it's within a reasonable range (max 10 frames)
             nearest_frame = self.get_nearest_frame(frame_number)
-            if nearest_frame is not None and abs(nearest_frame - frame_number) <= 10:
-                return self.find_roi_at_point(nearest_frame, x, y)
+            if nearest_frame is not None:
+                frame_diff = abs(nearest_frame - frame_number)
+                if frame_diff <= 10:
+                    print(f"DEBUG FIND_ROI: Using nearest frame {nearest_frame} (diff: {frame_diff})")
+                    return self.find_roi_at_point(nearest_frame, x, y)
+                else:
+                    print(f"DEBUG FIND_ROI: Nearest frame {nearest_frame} too far (diff: {frame_diff})")
+            else:
+                print(f"DEBUG FIND_ROI: Could not find nearest frame")
 
         # Return None for non-existent frames or if nearest frame is too far
+        print(f"DEBUG FIND_ROI: No ROI found for frame {frame_number}")
         return None
 
     def _print_json_structure(self, data, prefix="", max_depth=2, current_depth=0):

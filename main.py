@@ -7,6 +7,7 @@ Date: April 2025
 import os
 import argparse
 import time
+import sys
 from typing import List, Tuple
 import glob
 from datetime import datetime
@@ -14,30 +15,46 @@ import matplotlib.pyplot as plt
 
 # Import our modules
 from parser import process_asc_file, process_multiple_files, load_csv_file, load_multiple_csv_files
-from eyelink_visualizer import MovieEyeTrackingVisualizer
+from GUI.visualization.eyelink_visualizer import MovieEyeTrackingVisualizer
+from GUI.gui import run_gui
 
 
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Eye Movement Analysis for Autism Classification')
 
-    # Input arguments
-    parser.add_argument('--input', '-i', type=str, 
-                        help='Path to ASC/CSV file or directory containing ASC/CSV files')
+    # Mode selection
+    parser.add_argument('--gui', action='store_true', help='Run the graphical user interface')
+
+    # GUI options
+    parser.add_argument('--test_mode', action='store_true', help='Run GUI in test mode with predefined files')
+    parser.add_argument('--source_file', type=str, help='Path to source file (.asc or .csv) for GUI test mode')
+    parser.add_argument('--destination_folder', type=str, help='Output folder for GUI test mode')
+
+    # CLI processing options
+    parser.add_argument('--input', '-i', type=str, help='Path to ASC/CSV file or directory containing ASC/CSV files')
     parser.add_argument('--output', '-o', type=str, default='output',
                         help='Output directory for parsed data and visualizations')
     parser.add_argument('--screen_width', type=int, default=1280, help='Screen width in pixels')
     parser.add_argument('--screen_height', type=int, default=1024, help='Screen height in pixels')
-
-    # Processing options
-    parser.add_argument('--use_csv', action='store_true', 
+    parser.add_argument('--use_csv', action='store_true',
                         help='Process CSV files instead of ASC files. Useful for faster loading of pre-processed data.')
     parser.add_argument('--unified_only', action='store_true', help='Only save unified eye metrics CSV')
     parser.add_argument('--visualize', action='store_true', help='Generate visualizations')
     parser.add_argument('--no_features', action='store_false', dest='extract_features', help='Skip feature extraction')
     parser.add_argument('--report', action='store_true', help='Generate HTML visualization report')
 
-    return parser.parse_args()
+    # For backward compatibility
+    parser.add_argument('--csv_file', type=str,
+                        help='Path to CSV file for test mode (alternative to --source_file)')
+
+    args = parser.parse_args()
+
+    # If source_file is not set but csv_file is, use csv_file as source_file
+    if not args.source_file and args.csv_file:
+        args.source_file = args.csv_file
+
+    return args
 
 
 def find_input_files(input_path: str, use_csv: bool = False) -> List[str]:
@@ -54,7 +71,7 @@ def find_input_files(input_path: str, use_csv: bool = False) -> List[str]:
     file_ext = '*.csv' if use_csv else '*.asc'
     expected_ext = '.csv' if use_csv else '.asc'
     file_type = 'CSV' if use_csv else 'ASC'
-    
+
     if os.path.isdir(input_path):
         return sorted(glob.glob(os.path.join(input_path, file_ext)))
     elif os.path.isfile(input_path) and input_path.lower().endswith(expected_ext):
@@ -79,11 +96,10 @@ def create_output_dirs(base_output_dir: str) -> Tuple[str, str, str]:
     return data_dir, viz_dir, feature_dir
 
 
-def main():
-    """Main execution function."""
+def process_command_line(args):
+    """Process data using command line arguments."""
     start_time = time.time()
-    args = parse_args()
-    
+
     # Determine file type to process
     file_type = "CSV" if args.use_csv else "ASC"
 
@@ -109,7 +125,7 @@ def main():
     # Process multiple files if needed
     if len(input_files) > 1:
         print(f"\nProcessing {len(input_files)} {file_type} files...")
-        
+
         # Choose the appropriate processing function based on file type
         if args.use_csv:
             combined_features = load_multiple_csv_files(
@@ -149,7 +165,7 @@ def main():
     else:
         # Process a single file
         print(f"\nProcessing file: {input_files[0]}")
-        
+
         # Choose the appropriate processing function based on file type
         if args.use_csv:
             result = load_csv_file(
@@ -183,7 +199,7 @@ def main():
         try:
             # Get the base filename for participant ID
             participant_id = os.path.splitext(os.path.basename(input_files[0]))[0]
-            
+
             # If it's a CSV file with unified_eye_metrics in the name, remove that part
             if args.use_csv:
                 participant_id = participant_id.replace('_unified_eye_metrics', '')
@@ -214,6 +230,23 @@ def main():
     print(f"\nExecution time: {execution_time:.2f} seconds")
 
     return 0
+
+# test with that:  --input eye_tracking_data/1017735502.asc --output results --visualize --report
+
+def main():
+    """Main execution function."""
+    args = parse_args()
+    print(args)
+    if args.input:
+        return process_command_line(args)
+
+    # Run GUI by default requested
+    print("Starting Eye Movement Analysis GUI...")
+    return run_gui(
+        test_mode=args.test_mode,
+        source_file=args.source_file,
+        destination_folder=args.destination_folder
+    )
 
 
 if __name__ == "__main__":

@@ -339,8 +339,8 @@ class AnimatedScanpathWidget(QWidget):
         self.ax.set_xlim(0, self.screen_width)
         self.ax.set_ylim(self.screen_height, 0)  # Invert y-axis to match screen coordinates
         self.ax.set_title("Animated Scan Path", fontsize=14)
-        self.ax.set_xlabel("X Position (pixels)", fontsize=12)
-        self.ax.set_ylabel("Y Position (pixels)", fontsize=12)
+        self.ax.set_xlabel(f"X Position (pixels, max: {self.screen_width})", fontsize=12)
+        self.ax.set_ylabel(f"Y Position (pixels, max: {self.screen_height})", fontsize=12)
         self.ax.grid(True, linestyle='--', alpha=0.7)
 
         # Create empty line objects for animation
@@ -390,8 +390,8 @@ class AnimatedScanpathWidget(QWidget):
             export_ax.set_xlim(0, self.screen_width)
             export_ax.set_ylim(self.screen_height, 0)
             export_ax.set_title(f"Eye Movement Scan Path - {self.movie_name}", fontsize=14)
-            export_ax.set_xlabel("X Position (pixels)", fontsize=12)
-            export_ax.set_ylabel("Y Position (pixels)", fontsize=12)
+            export_ax.set_xlabel(f"X Position (pixels, screen width: {self.screen_width})", fontsize=12)
+            export_ax.set_ylabel(f"Y Position (pixels, screen height: {self.screen_height})", fontsize=12)
             export_ax.grid(True, linestyle='--', alpha=0.7)
 
             # Create line objects for animation
