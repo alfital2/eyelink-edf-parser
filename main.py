@@ -236,7 +236,6 @@ def process_command_line(args):
 def main():
     """Main execution function."""
     args = parse_args()
-    print(args)
     if args.input:
         return process_command_line(args)
 
